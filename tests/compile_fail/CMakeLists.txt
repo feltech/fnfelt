@@ -1,0 +1,54 @@
+# fnfelt
+# SPDX-License-Identifier: MIT
+# Copyright 2026 David Feltell
+
+# fnfelt_compile_fail(<name> SOURCE <file.cpp> ERROR_REGEX <regex>)
+#
+# Register a CTest test that passes iff <file.cpp> FAILS to compile against fnfelt.lib and the
+# compiler output matches ERROR_REGEX.
+function(fnfelt_test_compile_fail name)
+  cmake_parse_arguments(
+    PARSE_ARGV
+    1
+    _arg
+    ""
+    "SOURCE"
+    "ERROR_REGEX")
+  # ERROR_REGEX is a multi-value keyword so a long regex may be split across bracket arguments for
+  # readability; join the fragments back into the single string the compiler output is matched
+  # against (a single-value keyword would silently drop all but the first fragment).
+  string(
+    JOIN
+    ""
+    _arg_ERROR_REGEX
+    ${_arg_ERROR_REGEX})
+  if(NOT _arg_SOURCE)
+    message(FATAL_ERROR "fnfelt_compile_fail: SOURCE required")
+  endif()
+  if(NOT _arg_ERROR_REGEX)
+    message(FATAL_ERROR "fnfelt_compile_fail: ERROR_REGEX required")
+  endif()
+
+  set(target ${PROJECT_NAME}.test.compile_fail.${name})
+
+  # Compile only the failing source; no test runner or link step is needed.
+  add_library(${target} OBJECT ${_arg_SOURCE})
+  # Link to main project.
+  target_link_libraries(${target} PRIVATE doctest::doctest ${PROJECT_NAME}.lib)
+  # Match the main build's warning policy, which the library does not propagate.
+  fnfelt_target_warnings(${target})
+  set_target_properties(${target} PROPERTIES COMPILE_WARNING_AS_ERROR ON)
+  # Do not build as part of a whole-project build (since it'll fail by design).
+  set_target_properties(${target} PROPERTIES EXCLUDE_FROM_ALL TRUE)
+  # Building the target _is_ the test.
+  add_test(NAME ${target} COMMAND ${CMAKE_COMMAND} --build "${CMAKE_BINARY_DIR}" --target ${target}
+                                  --config $<CONFIG>)
+  set_tests_properties(
+    ${target}
+    PROPERTIES # Regex allowing the failing build to pass the test (i.e. expected error message).
+               PASS_REGULAR_EXPRESSION "${_arg_ERROR_REGEX}")
+endfunction()
+
+####################################################################################################
+# Compiler error test packages
+
