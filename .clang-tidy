@@ -1,0 +1,130 @@
+# fnfelt
+# SPDX-License-Identifier: MIT
+# Copyright 2026 David Feltell
+
+# Exclusions
+# - llvmlibc-*
+#     Seems very vendor-specific.
+# - altera-*
+#     FPGA hardware specific.
+# - *-default-arguments-calls
+#     Often we have to call functions with default arguments.
+# - *-braces-around-statements
+#     Yes it's bugprone, but conciseness can help readability
+# - *-use-trailing-return-type
+#     Leading return type is less verbose and more familiar.
+# - llvm-header-guard
+#     De-facto standard #pragma once is preferred.
+# - *-default-arguments-declaration
+#     Default arguments are useful.
+# - clion-misra-cpp2023-19-6-1
+#     Allow `#pragma once`.
+# - llvm-namespace-comment
+#     Conflicts with google-readability-namespace-comments, apparently.
+# - fuchsia-overloaded-operator
+#     Operator overload is useful, especially `operator()` for named lambdas.
+# - portability-avoid-pragma-once
+#     De-facto standard #pragma once is preferred.
+# - hicpp-invalid-access-moved
+#     Duplicate of bugprone-use-after-move. Disabled to allow easier inline suppression.
+# - fuchsia-trailing-return
+#     False positive flagging lambdas as disallowed for trailing return in clang-tidy 22.
+# - llvm-prefer-static-over-anonymous-namespace
+#     Conflicts with misc-use-anonymous-namespace. The C++ standard recommendation
+#     is anonymous namespaces for TU-local definitions; static is a C-ism.
+# - readability-trailing-comma
+#     Initializers are more readable without trailing commas.
+Checks: >
+    *,
+    -llvmlibc-*,
+    -altera-*,
+    -android-*,
+    -*-default-arguments-calls,
+    -*-braces-around-statements,
+    -*-use-trailing-return-type,
+    -llvm-header-guard,
+    -*-default-arguments-declarations,
+    -clion-misra-cpp2023-19-6-1,
+    -llvm-namespace-comment,
+    -fuchsia-overloaded-operator,
+    -portability-avoid-pragma-once,
+    -hicpp-invalid-access-moved,
+    -fuchsia-trailing-return,
+    -llvm-prefer-static-over-anonymous-namespace,
+    -clang-analyzer-core.uninitialized.Branch,
+    -clang-diagnostic-deprecated-declarations,
+    -readability-trailing-comma
+WarningsAsErrors: '*'
+HeaderFilterRegex: '.*'
+FormatStyle: file
+CheckOptions:
+    # Allow ALL_CAPS macros used as constants. Otherwise auto-generated export header is caught.
+    -   key: cppcoreguidelines-macro-usage.CheckCapsOnly
+        value: true
+    # Allow breaking rule of 5 when only special function is a defaulted destructor.
+    -   key: hicpp-special-member-functions.AllowSoleDefaultDtor
+        value: true
+    # Allow structs where (all) member variables are public, even if the struct has member functions.
+    -   key: misc-non-private-member-variables-in-classes.IgnoreClassesWithAllMemberVariablesBeingPublic
+        value: 1
+    -   key: cppcoreguidelines-special-member-functions.AllowSoleDefaultDtor
+        value: true
+    -   key: readability-identifier-length.IgnoredParameterNames
+        value: fn|x
+    -   key: readability-identifier-length.IgnoredVariableNames
+        value: fn|x
+    # Naming rules. DefaultCase is deliberately NOT configured: any decl kind
+    # without a dedicated option falls back to DefaultCase, so a DefaultCase
+    # would flag e.g. `using ns::CamelCaseName;` (UsingDecl has no naming kind
+    # and hits undefinedStyle()). Enforce each kind explicitly instead.
+    # See LLVM PR #198517 for the analogous template-wrapper fix.
+    -   key: readability-identifier-naming.NamespaceCase
+        value: lower_case
+    -   key: readability-identifier-naming.InlineNamespaceCase
+        value: lower_case
+    -   key: readability-identifier-naming.ClassCase
+        value: CamelCase
+    -   key: readability-identifier-naming.StructCase
+        value: CamelCase
+    -   key: readability-identifier-naming.UnionCase
+        value: CamelCase
+    -   key: readability-identifier-naming.AbstractClassCase
+        value: CamelCase
+    -   key: readability-identifier-naming.EnumCase
+        value: CamelCase
+    -   key: readability-identifier-naming.EnumConstantCase
+        value: lower_case
+    -   key: readability-identifier-naming.ScopedEnumConstantCase
+        value: lower_case
+    -   key: readability-identifier-naming.ConceptCase
+        value: lower_case
+    -   key: readability-identifier-naming.TypeAliasCase
+        value: lower_case
+    -   key: readability-identifier-naming.TypedefCase
+        value: lower_case
+    -   key: readability-identifier-naming.FunctionCase
+        value: lower_case
+    -   key: readability-identifier-naming.MethodCase
+        value: lower_case
+    -   key: readability-identifier-naming.MemberCase
+        value: lower_case
+    -   key: readability-identifier-naming.PrivateMemberSuffix
+        value: _
+    -   key: readability-identifier-naming.VariableCase
+        value: lower_case
+    -   key: readability-identifier-naming.ConstantCase
+        value: lower_case
+    -   key: readability-identifier-naming.ConstexprVariableCase
+        value: lower_case
+    -   key: readability-identifier-naming.ParameterCase
+        value: lower_case
+    -   key: readability-identifier-naming.MacroDefinitionCase
+        value: UPPER_CASE
+    -   key: readability-identifier-naming.TemplateParameterCase
+        value: CamelCase
+    -   key: readability-identifier-naming.TemplateParameterPrefix
+        value: T
+    -   key: readability-identifier-naming.TemplateParameterIgnoredRegexp
+        value: ^T$
+    -   key: readability-identifier-naming.ValueTemplateParameterCase
+        value: lower_case

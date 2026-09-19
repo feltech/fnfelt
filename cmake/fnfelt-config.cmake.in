@@ -1,0 +1,12 @@
+# fnfelt
+# SPDX-License-Identifier: MIT
+# Copyright 2026 David Feltell
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+find_dependency(libfork)
+
+include("${CMAKE_CURRENT_LIST_DIR}/@PROJECT_NAME@-targets.cmake")
+
+check_required_components(@PROJECT_NAME@)

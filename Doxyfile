@@ -1,0 +1,92 @@
+# fnfelt
+# SPDX-License-Identifier: MIT
+# Copyright 2026 David Feltell
+
+# ---------------------------------------------------------------------------
+# Project
+# ---------------------------------------------------------------------------
+
+PROJECT_NAME           = "fnfelt"
+OUTPUT_DIRECTORY       = build/doxygen
+
+# ---------------------------------------------------------------------------
+# Input
+# ---------------------------------------------------------------------------
+
+# IMPORTANT:
+# Only feed public headers to Doxygen.
+INPUT                  = include
+
+FILE_PATTERNS          = *.h \
+                         *.hh \
+                         *.hpp \
+                         *.hxx
+
+RECURSIVE              = YES
+
+# Do not accidentally document implementation files.
+EXCLUDE                =
+
+# ---------------------------------------------------------------------------
+# Format
+# ---------------------------------------------------------------------------
+
+JAVADOC_AUTOBRIEF      = YES
+
+# ---------------------------------------------------------------------------
+# Extraction
+# ---------------------------------------------------------------------------
+
+EXTRACT_ALL             = NO
+EXTRACT_PRIVATE         = NO
+EXTRACT_STATIC          = NO
+EXTRACT_LOCAL_CLASSES   = NO
+
+# Macros
+PREDEFINED              = __cpp_impl_reflection
+ENABLE_PREPROCESSING    = YES
+MACRO_EXPANSION         = YES
+
+# ---------------------------------------------------------------------------
+# Documentation enforcement
+# ---------------------------------------------------------------------------
+
+WARNINGS                = YES
+WARN_IF_UNDOCUMENTED    = YES
+WARN_IF_DOC_ERROR       = YES
+WARN_IF_INCOMPLETE_DOC  = YES
+WARN_NO_PARAMDOC        = YES
+WARN_IF_UNDOC_ENUM_VAL  = YES
+
+# Make warnings fail the Doxygen invocation.
+WARN_AS_ERROR            = FAIL_ON_WARNINGS_PRINT
+
+# Optional, but useful for catching undocumented enum values.
+WARN_IF_UNDOC_ENUM_VAL  = YES
+
+# ---------------------------------------------------------------------------
+# Warning output
+# ---------------------------------------------------------------------------
+
+WARN_LOGFILE             = build/doxygen/warnings.log
+
+# Keep output relatively quiet.
+QUIET                    = YES
+
+# ---------------------------------------------------------------------------
+# Output
+# ---------------------------------------------------------------------------
+
+GENERATE_HTML    = NO
+GENERATE_LATEX   = NO
+GENERATE_MAN     = NO
+GENERATE_RTF     = NO
+GENERATE_XML     = YES
+GENERATE_DOCBOOK = NO
+
+# ---------------------------------------------------------------------------
+# Misc
+# ---------------------------------------------------------------------------
+
+GENERATE_TAGFILE         =
+HAVE_DOT                 = NO
