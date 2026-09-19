@@ -1,0 +1,13 @@
+# fnfelt
+# SPDX-License-Identifier: MIT
+# Copyright 2026 David Feltell
+
+[requires]
+doctest/2.5.3
+
+[generators]
+CMakeDeps
+CMakeToolchain
+
+[options]
+
