@@ -17,6 +17,8 @@ target_sources(
          BASE_DIRS
          ${PROJECT_SOURCE_DIR}/include
          FILES
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/invoke.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/functors.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/type_traits.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/static_string.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/detail/errors.hpp
@@ -55,7 +57,12 @@ target_compile_options(${_lib_target} INTERFACE ${_compiler_features} ${_compile
 # Doctest test suite.
 
 if(${PROJECT_NAME}_ENABLE_DEV)
-  add_executable(${PROJECT_NAME}.main main.cpp type_traits.cpp)
+  add_executable(
+    ${PROJECT_NAME}.main
+    main.cpp
+    functors.cpp
+    invoke.cpp
+    type_traits.cpp)
   set(_main_target ${PROJECT_NAME}.main)
   target_link_libraries(${_main_target} PRIVATE doctest::doctest ${PROJECT_NAME}.lib)
   fnfelt_target_linters(${_main_target})

@@ -48,3 +48,4 @@ endfunction()
 # Compiler error test packages
 
 add_subdirectory(type_traits)
+add_subdirectory(invoke)
