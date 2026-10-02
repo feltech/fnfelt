@@ -43,3 +43,8 @@ function(fnfelt_test_compile_fail name)
       RESOURCE_LOCK
       fnfelt.test.compile_fail)
 endfunction()
+
+####################################################################################################
+# Compiler error test packages
+
+add_subdirectory(type_traits)
