@@ -49,3 +49,4 @@ endfunction()
 
 add_subdirectory(type_traits)
 add_subdirectory(invoke)
+add_subdirectory(monad)
