@@ -22,6 +22,8 @@ target_sources(
          BASE_DIRS
          ${PROJECT_SOURCE_DIR}/include
          FILES
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/static_string.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/detail/errors.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/macros_push.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/macros_pop.hpp)
 
