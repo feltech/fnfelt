@@ -31,12 +31,14 @@ target_sources(
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/fwd.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/and_then.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/ap.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/async.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/create.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/fwd.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/just.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/just.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/and_then.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/ap.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/async.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/create.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/IO.hpp)
@@ -92,6 +94,7 @@ if(${PROJECT_NAME}_ENABLE_DEV)
     monad/io/just.cpp
     monad/io/and_then.cpp
     monad/io/create.cpp
+    monad/io/ap.cpp
     monad/io/async.cpp
     monad/io/IO.cpp)
   set(_main_target ${PROJECT_NAME}.main)
