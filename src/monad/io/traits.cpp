@@ -13,6 +13,7 @@
 #include <utility>
 
 #include <fnfelt/monad/io/IO.hpp>
+#include <fnfelt/monad/io/detail/create.hpp>
 
 // Magic numbers are used in tests.
 // Unnamed parameters are used in test stubs.

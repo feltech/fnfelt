@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2026 David Feltell
 
-#include <fnfelt/monad/io/IO.hpp>
+#include <fnfelt/monad/io/create.hpp>
 
 #include <meta>
 
@@ -28,6 +28,5 @@ struct RejectSyncWait : fnfelt::monad::io::detail::CreateIOTraits<>
 
 void run()
 {
-    auto action = [] { return 1; };
-    (void)fnfelt::monad::io::IO<decltype(action), RejectSyncWait>{action}.build().sync_wait();
+    (void)fnfelt::monad::io::create<RejectSyncWait>([] { return 1; }).build().sync_wait();
 }
