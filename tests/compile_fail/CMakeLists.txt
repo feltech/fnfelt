@@ -12,8 +12,16 @@ function(fnfelt_test_compile_fail name)
     1
     _arg
     ""
-    "SOURCE;ERROR_REGEX"
-    "")
+    "SOURCE"
+    "ERROR_REGEX")
+  # ERROR_REGEX is a multi-value keyword so a long regex may be split across bracket arguments for
+  # readability; join the fragments back into the single string the compiler output is matched
+  # against (a single-value keyword would silently drop all but the first fragment).
+  string(
+    JOIN
+    ""
+    _arg_ERROR_REGEX
+    ${_arg_ERROR_REGEX})
   if(NOT _arg_SOURCE)
     message(FATAL_ERROR "fnfelt_compile_fail: SOURCE required")
   endif()

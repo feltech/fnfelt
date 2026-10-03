@@ -8,6 +8,7 @@
 #include <doctest/doctest.h>
 
 #include <array>
+#include <string>
 #include <tuple>
 #include <utility>
 
@@ -108,6 +109,19 @@ TEST_CASE("detail::is_spread_invocable checks template-argument-spread invocabil
     // A direct-only kleisli is not spread invocable.
     static_assert(
         !is_spread_invocable(^^decltype([](std::pair<int, int>) {}), ^^std::pair<int, int>));
+}
+
+TEST_CASE("detail::maybe_io_name names IOs and falls back for non-IOs")
+{
+    using fnfelt::monad::io::IO;
+    using fnfelt::monad::io::IOTraits;
+    using fnfelt::monad::io::detail::maybe_io_name;
+
+    using CustomIOTraits = IOTraits<custom_io_name>;
+
+    static_assert(maybe_io_name<^^IO<int (*)()>>() == "IO");
+    static_assert(maybe_io_name<^^IO<int (*)(), CustomIOTraits>>() == "CustomIO");
+    static_assert(maybe_io_name<^^int>() == "<unknown>");
 }
 
 #endif  // DOCTEST_CONFIG_DISABLE

@@ -13,6 +13,8 @@
 
 #include <meta>
 
+#include <string_view>
+
 #include <fnfelt/monad/io/fwd.hpp>
 
 namespace fnfelt::monad::io
@@ -142,6 +144,23 @@ consteval bool is_spread_invocable(std::meta::info kleisli_meta, std::meta::info
     return has_template_arguments(value_meta) && all_template_arguments_are_types(value_meta) &&
         is_invocable_type(
                add_lvalue_reference(add_const(kleisli_meta)), template_arguments_of(value_meta));
+}
+
+/**
+ * Name of IO.
+ *
+ * @tparam io_meta IO reflection to check.
+ * @return "<unknown>" if the IO reflection is not an IO, otherwise the IO's name.
+ */
+template <std::meta::info io_meta>
+constexpr std::string_view maybe_io_name()
+{
+    if constexpr (is_io(io_meta))
+    {
+        return [:io_meta:] ::name;
+    }
+
+    return "<unknown>";
 }
 }  // namespace detail
 }  // namespace fnfelt::monad::io

@@ -80,23 +80,6 @@ struct BindAction
 };
 
 /**
- * Name of IO.
- *
- * @tparam io_meta IO reflection to check.
- * @return "<unknown>" if the IO reflection is not an IO, otherwise the IO's name.
- */
-template <std::meta::info io_meta>
-constexpr std::string_view maybe_io_name()
-{
-    if constexpr (is_io(io_meta))
-    {
-        return [:io_meta:] ::name;
-    }
-
-    return "<unknown>";
-}
-
-/**
  * Name of IO returned from kleisli.
  *
  * @tparam source_io_meta Source IO reflection.
@@ -139,7 +122,7 @@ constexpr std::string_view maybe_kleisli_result_io_name()
  * @return Formatted error message string.
  */
 template <std::meta::info source_io_meta, std::meta::info kleisli_meta>
-consteval std::string error_msg(std::string_view bound_io_name, std::string_view reason)
+consteval std::string bind_error_msg(std::string_view bound_io_name, std::string_view reason)
 {
     std::string msg;
     msg += "fnfelt: ";
@@ -185,7 +168,8 @@ template <class TTraits, class TSourceAction, class TSourceTraits, class TKleisl
     using source_io_type = IO<TSourceAction, TSourceTraits>;
     static constexpr auto reason = TTraits::validate_bind(^^source_io_type, ^^TKleisli);
     static_assert(
-        reason.empty(), detail::error_msg<^^source_io_type, ^^TKleisli>(TTraits::name, reason));
+        reason.empty(),
+        detail::bind_error_msg<^^source_io_type, ^^TKleisli>(TTraits::name, reason));
     if constexpr (reason.empty())
     {
         using action_type = detail::BindAction<source_io_type, TKleisli>;
@@ -248,7 +232,8 @@ requires(!detail::is_io(^^TNotAnIO)) [[nodiscard]] constexpr auto bind(
     [[maybe_unused]] TNotAnIO source, [[maybe_unused]] TKleisli kleisli)
 {
     static constexpr auto reason = TTraits::validate_bind(^^TNotAnIO, ^^TKleisli);
-    static_assert(reason.empty(), detail::error_msg<^^TNotAnIO, ^^TKleisli>(TTraits::name, reason));
+    static_assert(
+        reason.empty(), detail::bind_error_msg<^^TNotAnIO, ^^TKleisli>(TTraits::name, reason));
     static_assert(!reason.empty(), "io::bind error overload chosen without an error flagged");
     return detail::BindError{};
 }

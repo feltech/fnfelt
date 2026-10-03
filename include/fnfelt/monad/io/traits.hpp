@@ -176,5 +176,44 @@ struct IOTraits
         }
         return "is not callable with the value";
     }
+
+    /**
+     * Perform the validation.
+     *
+     * Checks that both reflections are IO specialisations, and that the function IO's value is
+     * callable with the value IO's value as its single argument, and that the application returns
+     * a value (not void).
+     *
+     * `is_invocable_type` bare-type (prvalue) semantics match the runtime invocation
+     * `std::invoke(std::move(fn), std::move(value))` on moved locals (unlike
+     * `detail::is_directly_invocable`, which tests a const lvalue receiver).
+     *
+     * This is the overridable default implementation used by `io::ap`: custom traits may replace
+     * it to change which function/value IO pairs are accepted.
+     *
+     * @param fn_io_meta Reflection of the function IO type.
+     * @param value_io_meta Reflection of the value IO type.
+     * @return Empty string if validation passes, otherwise a string describing the error.
+     */
+    static consteval std::string_view validate_ap(
+        std::meta::info fn_io_meta, std::meta::info value_io_meta)
+    {
+        if (!is_io(fn_io_meta) || !is_io(value_io_meta))
+        {
+            return "is not an IO";
+        }
+        if (!is_invocable_type(
+                detail::io_value_meta(fn_io_meta), {detail::io_value_meta(value_io_meta)}))
+        {
+            return "function IO's value is not callable with the value IO's value";
+        }
+        std::meta::info result_meta = invoke_result(
+            detail::io_value_meta(fn_io_meta), {detail::io_value_meta(value_io_meta)});
+        if (is_void_type(result_meta))
+        {
+            return "does not return a value";
+        }
+        return {};
+    }
 };
 }  // namespace fnfelt::monad::io

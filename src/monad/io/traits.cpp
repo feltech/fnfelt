@@ -99,6 +99,22 @@ struct NonMovableKleisli  // NOLINT(*-special-member-functions)
 // NOLINTNEXTLINE(*-statically-constructed-objects)
 constexpr auto inner_io_action = [] { return fnfelt::monad::io::IO{[] { return false; }}; };
 
+/// Action returning a callable taking an int - a valid ap function IO action.
+constexpr auto int_fn_action = [] { return [](int) { return 1; }; };
+
+/// Action returning a callable taking a std::string - incompatible with an int value.
+constexpr auto string_fn_action = [] { return [](std::string) { return 1; }; };
+
+/// Action returning a callable taking two ints - must not be spread-fed by ap.
+constexpr auto two_arg_fn_action = [] { return [](int, int) { return 1; }; };
+
+/// Action returning a callable taking a pair as a single argument - compatible via ap.
+constexpr auto pair_fn_action = []
+{ return [](std::pair<int, int> pair_value) { return pair_value.first + pair_value.second; }; };
+
+/// Action returning a callable taking an int and returning void - must fail ap validation.
+constexpr auto void_fn_action = [] { return [](int) {}; };
+
 inline constexpr char custom_io_name[] = "CustomIO";
 using CustomIOTraits = fnfelt::monad::io::IOTraits<custom_io_name>;
 }  // namespace
@@ -270,6 +286,69 @@ TEST_CASE("IOTraits::validate_bind rejects kleisli types with the exact reason")
         IOTraits::validate_bind(
             ^^IO<std::pair<int, int> (*)()>, ^^decltype([](int, int) { return 1; })) ==
         "must return an IO");
+}
+
+TEST_CASE("IOTraits::validate_ap accepts compatible function and value IOs")
+{
+    using fnfelt::monad::io::IO;
+    using IOTraits = fnfelt::monad::io::IOTraits<>;
+
+    // Function IO's value is callable with the value IO's value.
+    static_assert(IOTraits::validate_ap(^^IO<decltype(int_fn_action)>, ^^IO<int (*)()>).empty());
+    static_assert(
+        IOTraits::validate_ap(^^IO<decltype(int_fn_action), CustomIOTraits>, ^^IO<int (*)()>)
+            .empty());
+}
+
+TEST_CASE("IOTraits::validate_ap rejects non-IO arguments with the exact reason")
+{
+    using fnfelt::monad::io::IO;
+    using IOTraits = fnfelt::monad::io::IOTraits<>;
+
+    static_assert(IOTraits::validate_ap(^^int, ^^IO<int (*)()>) == "is not an IO");
+    static_assert(IOTraits::validate_ap(^^IO<int (*)()>, ^^int) == "is not an IO");
+    static_assert(IOTraits::validate_ap(^^int, ^^int) == "is not an IO");
+}
+
+TEST_CASE("IOTraits::validate_ap rejects incompatible function and value IOs")
+{
+    using fnfelt::monad::io::IO;
+    using IOTraits = fnfelt::monad::io::IOTraits<>;
+
+    // The function IO's value is not callable with the value IO's value.
+    static_assert(
+        IOTraits::validate_ap(^^IO<decltype(string_fn_action)>, ^^IO<int (*)()>) ==
+        "function IO's value is not callable with the value IO's value");
+}
+
+TEST_CASE("IOTraits::validate_ap rejects a function IO whose callable returns void")
+{
+    using fnfelt::monad::io::IO;
+    using IOTraits = fnfelt::monad::io::IOTraits<>;
+
+    // The application itself produces no value.
+    static_assert(
+        IOTraits::validate_ap(^^IO<decltype(void_fn_action)>, ^^IO<int (*)()>) ==
+        "does not return a value");
+}
+
+TEST_CASE("IOTraits::validate_ap does not spread tuple-like values")
+{
+    using fnfelt::monad::io::IO;
+    using IOTraits = fnfelt::monad::io::IOTraits<>;
+
+    // ap applies the callable to the whole value, so a two-argument callable is incompatible
+    // with a pair value (unlike bind, which would spread the pair into it).
+    static_assert(
+        IOTraits::validate_ap(^^IO<decltype(two_arg_fn_action)>, ^^IO<int (*)()>) ==
+        "function IO's value is not callable with the value IO's value");
+    static_assert(
+        IOTraits::validate_ap(^^IO<decltype(two_arg_fn_action)>, ^^IO<std::pair<int, int> (*)()>) ==
+        "function IO's value is not callable with the value IO's value");
+    // A callable taking the whole pair as a single argument is compatible.
+    static_assert(
+        IOTraits::validate_ap(^^IO<decltype(pair_fn_action)>, ^^IO<std::pair<int, int> (*)()>)
+            .empty());
 }
 
 // NOLINTEND(*-magic-numbers)
