@@ -45,6 +45,9 @@ struct MoveOnlyCallable
         return *ptr;
     }
 };
+
+inline constexpr char custom_io_name[] = "CustomIO";
+using CustomIOTraits = fnfelt::monad::io::CreateIOTraits<custom_io_name>;
 }  // namespace
 
 TEST_CASE("IO can be constructed with a capturing lambda returning a value")
@@ -79,6 +82,21 @@ TEST_CASE("IO can be constructed with a callable struct returning a value")
     static_assert(
         std::
             is_same_v<decltype(IO<CallableStruct>(CallableStruct{}))::action_type, CallableStruct>);
+}
+
+TEST_CASE("IO uses CreateIOTraits as the default traits")
+{
+    using fnfelt::monad::io::IO;
+    using CreateIOTraits = fnfelt::monad::io::CreateIOTraits<>;
+
+    static_assert(std::is_same_v<IO<int (*)()>::traits, CreateIOTraits>);
+}
+
+TEST_CASE("IO can be instantiated with custom traits")
+{
+    using fnfelt::monad::io::IO;
+
+    static_assert(std::is_same_v<IO<int (*)(), CustomIOTraits>::traits, CustomIOTraits>);
 }
 
 TEST_CASE("IO exposes the value type its action produces")

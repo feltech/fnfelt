@@ -9,5 +9,6 @@
 #pragma once
 
 #include <fnfelt/monad/io/IO.hpp>      // IWYU pragma: export
+#include <fnfelt/monad/io/create.hpp>  // IWYU pragma: export
 #include <fnfelt/monad/io/detail.hpp>  // IWYU pragma: export
 #include <fnfelt/monad/io/fwd.hpp>     // IWYU pragma: export

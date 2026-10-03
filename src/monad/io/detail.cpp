@@ -21,6 +21,9 @@ namespace
 /// Incomplete type - has no meaningful invocation result.
 struct Incomplete;
 
+/// Custom IO name for a custom-traits instantiation.
+inline constexpr char custom_io_name[] = "CustomIO";
+
 /// Directly callable only as a const lvalue (its rvalue overload is deleted).
 struct ConstLvalueDirectFn
 {
@@ -94,6 +97,19 @@ struct TypeOnlyTemplate
 {
 };
 }  // namespace
+
+TEST_CASE("detail::is_io recognises IO specialisations with any traits")
+{
+    using fnfelt::monad::io::CreateIOTraits;
+    using fnfelt::monad::io::IO;
+    using fnfelt::monad::io::detail::is_io;
+
+    using CustomIOTraits = CreateIOTraits<custom_io_name>;
+
+    static_assert(is_io(^^IO<int (*)()>));
+    static_assert(is_io(^^IO<int (*)(), CustomIOTraits>));
+    static_assert(!is_io(^^int));
+}
 
 TEST_CASE("detail::action_value_meta reflects the action's result")
 {
