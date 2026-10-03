@@ -1,0 +1,39 @@
+// fnfelt
+// SPDX-License-Identifier: MIT
+// Copyright 2026 David Feltell
+#ifndef DOCTEST_CONFIG_DISABLE
+
+#include <fnfelt/monad/io.hpp>
+
+#include <doctest/doctest.h>
+
+#include <type_traits>
+
+// Magic numbers are used in tests.
+// NOLINTBEGIN(*-magic-numbers)
+namespace
+{
+using fnfelt::monad::io::bind;
+using fnfelt::monad::io::create;
+using IOTraits = fnfelt::monad::io::IOTraits<>;
+
+TEST_CASE("The io.hpp umbrella provides the full public interface")
+{
+    // create: default-traits overload names the IO "IO".
+    auto const source = create([] { return 1; });
+    static_assert(std::is_same_v<decltype(source)::traits, IOTraits>);
+
+    // Member bind, free bind and free ap all resolve through the umbrella alone.
+    auto const bound = source.bind([](int x) { return create([x] { return x + 1; }); });
+    auto const free_bound = bind(source, [](int x) { return create([x] { return x + 1; }); });
+
+    static_assert(std::is_same_v<decltype(bound)::traits, IOTraits>);
+    static_assert(std::is_same_v<decltype(free_bound)::traits, IOTraits>);
+
+    CHECK_EQ(bound(), 2);
+    CHECK_EQ(free_bound(), 2);
+}
+}  // namespace
+
+// NOLINTEND(*-magic-numbers)
+#endif  // DOCTEST_CONFIG_DISABLE

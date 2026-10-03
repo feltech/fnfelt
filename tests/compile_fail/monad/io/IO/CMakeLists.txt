@@ -31,10 +31,3 @@ fnfelt_test_compile_fail(
   custom_name.cpp
   ERROR_REGEX
   "fnfelt: FileIO action is invalid: is not callable with no arguments")
-
-fnfelt_test_compile_fail(
-  ${_prefix}.bind_custom_traits
-  SOURCE
-  bind_custom_traits.cpp
-  ERROR_REGEX
-  "fnfelt: IO bind continuation is invalid: rejected by custom kleisli traits")

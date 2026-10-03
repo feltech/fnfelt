@@ -195,65 +195,80 @@ TEST_CASE("IOTraits::is_io delegates to the detail::is_io free helper")
     static_assert(!fnfelt::monad::io::detail::is_io(^^int));
 }
 
-TEST_CASE("IOTraits::validate_kleisli accepts direct and spread kleisli types")
+TEST_CASE("IOTraits::validate_bind accepts direct and spread kleisli types")
 {
     using fnfelt::monad::io::IO;
     using IOTraits = fnfelt::monad::io::IOTraits<>;
 
     // Direct: kleisli takes the value as a single argument.
-    static_assert(
-        IOTraits::validate_kleisli(^^int, ^^decltype([](int) { return IO{[] { return 1; }}; }))
-            .empty());
+    static_assert(IOTraits::validate_bind(
+                      ^^IO<int (*)()>, ^^decltype([](int) { return IO{[] { return 1; }}; }))
+                      .empty());
     // Spread over pair.
-    static_assert(
-        IOTraits::validate_kleisli(
-            ^^std::pair<int, int>, ^^decltype([](int, int) { return IO{[] { return 1; }}; }))
-            .empty());
+    static_assert(IOTraits::validate_bind(
+                      ^^IO<std::pair<int, int> (*)()>,
+                      ^^decltype([](int, int) { return IO{[] { return 1; }}; }))
+                      .empty());
     // Spread over tuple.
-    static_assert(
-        IOTraits::validate_kleisli(
-            ^^std::tuple<int, int>, ^^decltype([](int, int) { return IO{[] { return 1; }}; }))
-            .empty());
+    static_assert(IOTraits::validate_bind(
+                      ^^IO<std::tuple<int, int> (*)()>,
+                      ^^decltype([](int, int) { return IO{[] { return 1; }}; }))
+                      .empty());
     // Callable struct and function pointer kleisli.
-    static_assert(IOTraits::validate_kleisli(^^int, ^^ValidKleisli).empty());
-    static_assert(IOTraits::validate_kleisli(^^int, ^^IO<int (*)()> (*)(int)).empty());
+    static_assert(IOTraits::validate_bind(^^IO<int (*)()>, ^^ValidKleisli).empty());
+    static_assert(IOTraits::validate_bind(^^IO<int (*)()>, ^^IO<int (*)()> (*)(int)).empty());
+    // Source IO with custom traits is still accepted.
+    static_assert(IOTraits::validate_bind(^^IO<int (*)(), CustomIOTraits>, ^^ValidKleisli).empty());
 }
 
-TEST_CASE("IOTraits::validate_kleisli rejects kleisli types with the exact reason")
+TEST_CASE("IOTraits::validate_bind rejects non-IO sources with the exact reason")
 {
     using fnfelt::monad::io::IO;
     using IOTraits = fnfelt::monad::io::IOTraits<>;
 
-    // Void source value.
+    static_assert(IOTraits::validate_bind(^^int, ^^ValidKleisli) == "is not an IO");
+}
+
+TEST_CASE("IOTraits::validate_bind rejects kleisli types with the exact reason")
+{
+    using fnfelt::monad::io::IO;
+    using IOTraits = fnfelt::monad::io::IOTraits<>;
+
+    // Void source value: an IO whose action produces no value cannot feed a continuation. The
+    // reflection does not instantiate the IO's class-scope action validation.
     static_assert(
-        IOTraits::validate_kleisli(^^void, ^^decltype([](int) { return 1; })) ==
+        IOTraits::validate_bind(^^IO<void (*)()>, ^^decltype([](int) { return 1; })) ==
         "source produces no value");
     // Incomplete kleisli.
-    static_assert(IOTraits::validate_kleisli(^^int, ^^Incomplete) == "is not a complete type");
+    static_assert(
+        IOTraits::validate_bind(^^IO<int (*)()>, ^^Incomplete) == "is not a complete type");
     // Reference kleisli.
     static_assert(
-        IOTraits::validate_kleisli(^^int, ^^decltype([](int) { return 1; }) &) ==
+        IOTraits::validate_bind(^^IO<int (*)()>, ^^decltype([](int) { return 1; }) &) ==
         "must not be a reference type");
     // Non-class, non-function-pointer kleisli.
     static_assert(
-        IOTraits::validate_kleisli(^^int, ^^int) == "is not a class or function pointer type");
+        IOTraits::validate_bind(^^IO<int (*)()>, ^^int) ==
+        "is not a class or function pointer type");
     // Non-move-constructible kleisli.
     static_assert(
-        IOTraits::validate_kleisli(^^int, ^^NonMovableKleisli) == "must be move constructible");
+        IOTraits::validate_bind(^^IO<int (*)()>, ^^NonMovableKleisli) ==
+        "must be move constructible");
     // Not callable with the value.
     static_assert(
-        IOTraits::validate_kleisli(^^int, ^^decltype([](std::string) { return 1; })) ==
+        IOTraits::validate_bind(^^IO<int (*)()>, ^^decltype([](std::string) { return 1; })) ==
         "is not callable with the value");
     static_assert(
-        IOTraits::validate_kleisli(^^int, ^^decltype([](int, int) { return 1; })) ==
+        IOTraits::validate_bind(^^IO<int (*)()>, ^^decltype([](int, int) { return 1; })) ==
         "is not callable with the value");
     // Callable but returns a non-IO.
     static_assert(
-        IOTraits::validate_kleisli(^^int, ^^decltype([](int) { return 1; })) ==
+        IOTraits::validate_bind(^^IO<int (*)()>, ^^decltype([](int) { return 1; })) ==
         "must return an IO");
     // Spread-callable but returns a non-IO.
     static_assert(
-        IOTraits::validate_kleisli(^^std::pair<int, int>, ^^decltype([](int, int) { return 1; })) ==
+        IOTraits::validate_bind(
+            ^^IO<std::pair<int, int> (*)()>, ^^decltype([](int, int) { return 1; })) ==
         "must return an IO");
 }
 

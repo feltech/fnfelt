@@ -26,8 +26,9 @@ namespace fnfelt::monad::io
  *
  * Checks, in order: the action is a complete, non-reference, non-IO class or function pointer type;
  * it is move constructible; it is callable with no arguments, including when const; and its
- * invocation returns a movable, non-reference, non-IO, non-void value. Also validates bind
- * continuations (kleisli) against a source IO's value (see `validate_kleisli`).
+ * invocation returns a movable, non-reference, non-IO, non-void value. Also validates bind source
+ * IO and continuation pairs (see `validate_bind`), and applicative function/value IO pairs (see
+ * `validate_ap`).
  *
  * @tparam name_cstr Null-terminated name of the IO instantiation, used in diagnostics. Must have
  * static storage duration.
@@ -112,20 +113,26 @@ struct IOTraits
     /**
      * Perform the validation.
      *
-     * Checks, in order: the source produces a value; the kleisli is a complete, non-reference, move
-     * constructible class or function pointer type; it is callable with the source value either
-     * directly or spread from its template arguments; and its result is an IO.
+     * Checks, in order: the source is an IO producing a value (not void); the kleisli is a
+     * complete, non-reference, move constructible class or function pointer type; it is callable
+     * with the source value either directly or spread from its template arguments; and its result
+     * is an IO.
      *
-     * This is the overridable default implementation used by `IO::bind`: custom traits may replace
-     * it to change which continuations are accepted.
+     * This is the overridable default implementation used by `io::bind`: custom traits may
+     * replace it to change which source IO and continuation pairs are accepted.
      *
-     * @param value_meta Reflection of the value type the source IO produces.
+     * @param io_meta Reflection of the source IO type.
      * @param kleisli_meta Reflection of the kleisli type.
      * @return Empty string if validation passes, otherwise a string describing the error.
      */
-    static consteval std::string_view validate_kleisli(
-        std::meta::info value_meta, std::meta::info kleisli_meta)
+    static consteval std::string_view validate_bind(
+        std::meta::info io_meta, std::meta::info kleisli_meta)
     {
+        if (!is_io(io_meta))
+        {
+            return "is not an IO";
+        }
+        auto const value_meta = detail::io_value_meta(io_meta);
         if (is_void_type(value_meta))
         {
             return "source produces no value";

@@ -5,16 +5,13 @@
 /**
  * @file detail.hpp
  *
- * Implementation details for the IO monad.
+ * Generic implementation details for the IO monad.
  *
- * Reflection helper predicates and the bind action used by IO::bind.
+ * Reflection helper predicates shared by the IO monad's operations.
  */
 #pragma once
 
 #include <meta>
-
-#include <tuple>
-#include <utility>
 
 #include <fnfelt/monad/io/fwd.hpp>
 
@@ -76,6 +73,39 @@ consteval std::meta::info action_value_meta(std::meta::info action_meta)
 }
 
 /**
+ * Reflection of the action type wrapped by an IO.
+ *
+ * Non-IO types have no wrapped action, but `template_arguments_of` throws for non-template types
+ * (a consteval throw is a hard compile error), so `void` is returned as a placeholder in that
+ * case, mirroring `action_value_meta`'s convention.
+ *
+ * @param io_meta Reflection of the (possibly IO) type.
+ * @return Reflection of the wrapped action, or `void` if the type is not an IO.
+ */
+consteval std::meta::info io_action_meta(std::meta::info io_meta)
+{
+    if (!is_io(io_meta))
+    {
+        return ^^void;
+    }
+    // Extract the scalar inside the consteval function: vector<info> results allocate and cannot
+    // escape a constant-evaluated context.
+    return template_arguments_of(dealias(remove_cvref(io_meta)))[0];
+}
+
+/**
+ * Reflection of the value an IO's action produces when run.
+ *
+ * @param io_meta Reflection of the (possibly IO) type.
+ * @return Reflection of the wrapped action's invocation result, or `void` if the type is not an IO
+ * (or the action is incomplete or not callable, via `action_value_meta`).
+ */
+consteval std::meta::info io_value_meta(std::meta::info io_meta)
+{
+    return action_value_meta(io_action_meta(io_meta));
+}
+
+/**
  * Check whether a kleisli is directly invocable with the source IO's value.
  *
  * The kleisli is stored as a const member and invoked as a const lvalue, so const-lvalue receiver
@@ -113,55 +143,5 @@ consteval bool is_spread_invocable(std::meta::info kleisli_meta, std::meta::info
         is_invocable_type(
                add_lvalue_reference(add_const(kleisli_meta)), template_arguments_of(value_meta));
 }
-
-/**
- * Tombstone returned by `IO::bind` when the kleisli is invalid.
- *
- * The invalid bind is already rejected by a friendly static_assert; this type exists only to keep
- * the return type well-formed and must never be used.
- */
-struct BindError
-{
-};
-
-/**
- * Action that runs a source IO and feeds its value to a kleisli continuation.
- *
- * The continuation is invoked with the value directly when possible, otherwise the value is spread
- * into the continuation as if by `std::apply` (direct invocation wins over spreading). The
- * continuation is a const member, so it must be callable as a const lvalue.
- *
- * @tparam TSourceIO Source IO to run.
- * @tparam TKleisli Continuation taking the source's value and returning an IO.
- */
-template <class TSourceIO, class TKleisli>
-struct BindAction
-{
-    /// Source IO to run.
-    TSourceIO source;
-    /// Continuation applied to the source's value.
-    TKleisli kleisli;
-
-    /**
-     * Run the source IO, apply the continuation to its value, then run the resulting IO.
-     *
-     * @return The final value.
-     */
-    constexpr auto operator()() const
-    {
-        using source_value = typename TSourceIO::value;
-        auto input = source();
-        if constexpr (is_directly_invocable(^^TKleisli, ^^source_value))
-        {
-            auto next = kleisli(std::move(input));
-            return next();
-        }
-        if constexpr (!is_directly_invocable(^^TKleisli, ^^source_value))
-        {
-            auto next = std::apply(kleisli, std::move(input));
-            return next();
-        }
-    }
-};
 }  // namespace detail
 }  // namespace fnfelt::monad::io

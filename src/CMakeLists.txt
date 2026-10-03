@@ -28,6 +28,7 @@ target_sources(
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/fwd.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/traits.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/bind.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/create.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/IO.hpp)
 
@@ -71,6 +72,7 @@ if(${PROJECT_NAME}_ENABLE_DEV)
     type_traits.cpp
     monad/io/detail.cpp
     monad/io/traits.cpp
+    monad/io/bind.cpp
     monad/io/create.cpp
     monad/io/IO.cpp)
   set(_main_target ${PROJECT_NAME}.main)

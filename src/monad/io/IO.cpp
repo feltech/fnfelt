@@ -9,7 +9,6 @@
 
 #include <memory>
 #include <type_traits>
-#include <utility>
 
 // Magic numbers are used in tests.
 // Unnamed parameters are used in test stubs.
@@ -107,102 +106,6 @@ TEST_CASE("IO operator() runs the action and returns its value")
     CHECK_EQ(IO{[value = 123] { return value; }}(), 123);
     CHECK_EQ(IO{CallableStruct{}}(), 7);
     CHECK_EQ(IO{&free_action}(), 42);
-}
-
-TEST_CASE("IO bind accepts a direct kleisli and runs source then continuation")
-{
-    using fnfelt::monad::io::IO;
-
-    auto const bound = IO{[] { return 1; }}.bind([](int x) { return IO{[x] { return x + 1; }}; });
-    CHECK_EQ(bound(), 2);
-}
-
-TEST_CASE("IO bind spreads pair and tuple values into the kleisli")
-{
-    using fnfelt::monad::io::IO;
-
-    auto const bound_pair = IO{[] { return std::pair{1, 2}; }}.bind(
-        [](int x, int y) { return IO{[x, y] { return x + y; }}; });
-    CHECK_EQ(bound_pair(), 3);
-
-    auto const bound_tuple = IO{[] { return std::tuple{3, 4}; }}.bind(
-        [](int x, int y) { return IO{[x, y] { return x * y; }}; });
-    CHECK_EQ(bound_tuple(), 12);
-}
-
-TEST_CASE("IO bind prefers direct invocation over spreading")
-{
-    using fnfelt::monad::io::IO;
-
-    // The kleisli accepts the whole pair, so it must be invoked directly even though the value
-    // could also be spread.
-    auto const bound = IO{[] { return std::pair{1, 2}; }}.bind(
-        [](std::pair<int, int> pair_value)
-        { return IO{[pair_value] { return pair_value.first * 10 + pair_value.second; }}; });
-    CHECK_EQ(bound(), 12);
-}
-
-TEST_CASE("IO bind chains through successive continuations")
-{
-    using fnfelt::monad::io::IO;
-
-    auto const bound = IO{[] { return 1; }}
-                           .bind([](int x) { return IO{[x] { return x + 1; }}; })
-                           .bind([](int x) { return IO{[x] { return x * 10; }}; });
-    CHECK_EQ(bound(), 20);
-}
-
-TEST_CASE("IO bind accepts an lvalue kleisli and copies it")
-{
-    using fnfelt::monad::io::IO;
-
-    // A named copyable kleisli must be accepted (copied by value), not deduced as a reference
-    // type and rejected.
-    struct IdentityKleisli
-    {
-        int offset;
-
-        auto operator()(int value) const
-        {
-            return IO{[value, offset = offset] { return value + offset; }};
-        }
-    };
-
-    IdentityKleisli kleisli_lvalue{10};
-    auto const bound = IO{[] { return 1; }}.bind(kleisli_lvalue);
-    CHECK_EQ(bound(), 11);
-
-    // The lvalue is untouched, so it remains usable.
-    CHECK_EQ(kleisli_lvalue(2)(), 12);
-}
-
-TEST_CASE("IO bind works on a const IO and with a move-only kleisli")
-{
-    using fnfelt::monad::io::IO;
-
-    IO const source{[] { return 5; }};
-    auto const bound = source.bind(MoveOnlyKleisli{});
-    CHECK_EQ(bound(), 7);
-}
-
-TEST_CASE("IO with custom traits binds and runs end-to-end")
-{
-    using fnfelt::monad::io::IO;
-
-    struct CustomAction
-    {
-        int value;
-
-        int operator()() const
-        {
-            return value;
-        }
-    };
-
-    IO const source{[] { return 1; }};
-    auto const bound =
-        source.bind([](int x) { return IO<CustomAction, CustomIOTraits>{CustomAction{x + 1}}; });
-    CHECK_EQ(bound(), 2);
 }
 
 // NOLINTEND(*-magic-numbers)
