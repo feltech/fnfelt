@@ -31,6 +31,7 @@ target_sources(
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/traits.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/and_then.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/ap.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/create.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/IO.hpp)
 
@@ -81,7 +82,9 @@ if(${PROJECT_NAME}_ENABLE_DEV)
     monad/io/traits.cpp
     monad/io/and_then.cpp
     monad/io/create.cpp
-    monad/io/IO.cpp)
+    monad/io/ap.cpp
+    monad/io/IO.cpp
+    monad/io.cpp)
   set(_main_target ${PROJECT_NAME}.main)
   target_link_libraries(${_main_target} PRIVATE doctest::doctest ${PROJECT_NAME}.lib)
   fnfelt_target_linters(${_main_target})

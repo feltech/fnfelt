@@ -168,5 +168,57 @@ struct IOTraits
         }
         return "continuation function does not accept the source IO's value";
     }
+
+    /**
+     * Validate the IO-wrapped function and value provided to @ref ap.
+     *
+     * Checks that both reflections are IO specialisations, and that the IO-wrapped function's
+     * callable accepts the IO-wrapped value's value either directly or spread from the value's
+     * template arguments (direct invocation wins), and that the application returns a value (not
+     * void).
+     *
+     * `is_invocable_type` bare-type (prvalue) semantics match the runtime invocation
+     * `std::invoke(std::move(fn), std::move(value))` / `std::apply(std::move(fn), ...)` on moved
+     * locals (unlike `detail::is_directly_invocable`, which tests a const lvalue receiver).
+     *
+     * This is the overridable default implementation used by `io::ap`: custom traits may replace
+     * it to change which IO-wrapped function/value pairs are accepted.
+     *
+     * @param fn_io_meta Reflection of the function IO type.
+     * @param value_io_meta Reflection of the value IO type.
+     * @return Empty string if validation passes, otherwise a string describing the error.
+     */
+    static consteval std::string_view validate_ap(
+        std::meta::info fn_io_meta, std::meta::info value_io_meta)
+    {
+        if (!is_io(fn_io_meta))
+        {
+            return "IO-wrapped function is not an IO";
+        }
+        if (!is_io(value_io_meta))
+        {
+            return "IO-wrapped value is not an IO";
+        }
+        std::meta::info const fn_value_meta = detail::io_value_meta(fn_io_meta);
+        std::meta::info const val_value_meta = detail::io_value_meta(value_io_meta);
+        if (is_invocable_type(fn_value_meta, {val_value_meta}))
+        {
+            if (is_void_type(invoke_result(fn_value_meta, {val_value_meta})))
+            {
+                return "IO-wrapped function's callable does not return a value";
+            }
+            return {};
+        }
+        if (detail::is_spread_invocable_as(fn_value_meta, val_value_meta))
+        {
+            if (is_void_type(
+                    invoke_result(fn_value_meta, template_arguments_of(dealias(val_value_meta)))))
+            {
+                return "IO-wrapped function's callable does not return a value";
+            }
+            return {};
+        }
+        return "IO-wrapped function's callable does not accept the IO-wrapped value's value";
+    }
 };
 }  // namespace fnfelt::monad::io

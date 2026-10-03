@@ -4,3 +4,4 @@
 
 add_subdirectory(IO)
 add_subdirectory(and_then)
+add_subdirectory(ap)

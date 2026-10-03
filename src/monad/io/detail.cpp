@@ -216,4 +216,17 @@ TEST_CASE("detail::short_type_name renders a structurally safe short name")
     static_assert(short_type_name(^^Named const) == "Named");
 }
 
+TEST_CASE("detail::maybe_io_name names IOs and falls back for non-IOs")
+{
+    using fnfelt::monad::io::IO;
+    using fnfelt::monad::io::IOTraits;
+    using fnfelt::monad::io::detail::maybe_io_name;
+
+    using CustomIOTraits = IOTraits<custom_io_name>;
+
+    static_assert(maybe_io_name<^^IO<int (*)()>>() == "IO");
+    static_assert(maybe_io_name<^^IO<int (*)(), CustomIOTraits>>() == "CustomIO");
+    static_assert(maybe_io_name<^^int>() == "<unknown>");
+}
+
 #endif  // DOCTEST_CONFIG_DISABLE

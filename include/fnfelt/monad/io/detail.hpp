@@ -247,5 +247,22 @@ consteval std::string_view short_type_name(std::meta::info type_meta)
     }
     return fundamental_type_name(type_meta);
 }
+
+/**
+ * Name of IO.
+ *
+ * @tparam io_meta IO reflection to check.
+ * @return "<unknown>" if the IO reflection is not an IO, otherwise the IO's name.
+ */
+template <std::meta::info io_meta>
+constexpr std::string_view maybe_io_name()
+{
+    if constexpr (is_io(io_meta))
+    {
+        return [:io_meta:] ::name;
+    }
+
+    return "<unknown>";
+}
 }  // namespace detail
 }  // namespace fnfelt::monad::io

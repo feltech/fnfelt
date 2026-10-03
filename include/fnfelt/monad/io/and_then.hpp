@@ -87,23 +87,6 @@ struct AndThenAction
 };
 
 /**
- * Name of IO.
- *
- * @tparam io_meta IO reflection to check.
- * @return "<unknown>" if the IO reflection is not an IO, otherwise the IO's name.
- */
-template <std::meta::info io_meta>
-constexpr std::string_view maybe_io_name()
-{
-    if constexpr (is_io(io_meta))
-    {
-        return [:io_meta:] ::name;
-    }
-
-    return "<unknown>";
-}
-
-/**
  * Name of IO returned from the continuation.
  *
  * @tparam source_io_meta Source IO reflection.
