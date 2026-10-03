@@ -10,10 +10,7 @@
 #include <type_traits>
 #include <utility>
 
-#include <fnfelt/monad/io/and_then.hpp>
-#include <fnfelt/monad/io/async.hpp>
-#include <fnfelt/monad/io/create.hpp>
-#include <fnfelt/monad/io/just.hpp>
+#include <fnfelt/monad/io.hpp>
 #include <fnfelt/static_string.hpp>
 
 // Magic numbers are used in tests.

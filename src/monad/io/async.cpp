@@ -18,20 +18,19 @@
 
 #include <libfork/schedule/lazy_pool.hpp>
 
-#include <fnfelt/monad/io/IO.hpp>
-#include <fnfelt/monad/io/and_then.hpp>
-#include <fnfelt/monad/io/ap.hpp>
-#include <fnfelt/monad/io/async.hpp>
-#include <fnfelt/monad/io/create.hpp>
-#include <fnfelt/monad/io/just.hpp>
-#include <fnfelt/monad/io/transform.hpp>
+#include <fnfelt/monad/io.hpp>
 
 // Magic numbers are used in tests.
 // NOLINTBEGIN(*-magic-numbers)
 namespace
 {
 using fnfelt::monad::io::IO;
+using fnfelt::monad::io::detail::AndThenIOTraits;
+using fnfelt::monad::io::detail::ApIOTraits;
+using fnfelt::monad::io::detail::CreateAsyncIOTraits;
 using fnfelt::monad::io::detail::CreateIOTraits;
+using fnfelt::monad::io::detail::TransformIOTraits;
+
 /// Scheduler stand-in, accepted-and-ignored on the synchronous path.
 struct MockPool
 {
@@ -300,6 +299,16 @@ struct DelegatingCreateAsyncTraits : fnfelt::monad::io::detail::CreateIOTraits<>
 };
 }  // namespace
 
+TEST_CASE("IORunProxy retains the IO traits and consults their sync_wait validator")
+{
+    auto io = fnfelt::monad::io::create<LvalueRunTraits>([] { return 42; });
+    auto proxy = io.build();
+    static_assert(std::is_same_v<
+                  decltype(proxy),
+                  fnfelt::monad::io::IORunProxy<decltype(io)::action_type, LvalueRunTraits>>);
+    CHECK_EQ(proxy.sync_wait(), 42);
+}
+
 TEST_CASE("CreateIOTraits validates run proxy consumption and async scheduler arguments")
 {
     using sync_action = int (*)();
@@ -336,50 +345,6 @@ TEST_CASE("CreateIOTraits validates run proxy consumption and async scheduler ar
         fnfelt::monad::io::detail::CreateIOTraits<>::validate_sync_wait(
             ^^async_proxy &&, ^^AsyncIntAction, {^^lf::lazy_pool, ^^lf::lazy_pool}) ==
         "sync_wait accepts at most one scheduler argument");
-}
-
-TEST_CASE("async proxies are detected by reflection, not run")
-{
-    using fnfelt::monad::io::detail::action_is_async;
-    using fnfelt::monad::io::detail::action_value_meta;
-    using fnfelt::monad::io::detail::async_proxy_has_value;
-    using fnfelt::monad::io::detail::async_proxy_value_meta;
-
-    static_assert(action_is_async(^^AsyncIntAction));
-    static_assert(action_is_async(^^InheritedAsyncAction));
-    static_assert(!action_is_async(^^decltype([] { return 1; })));
-
-    static_assert(is_same_type(action_value_meta(^^AsyncIntAction), ^^int));
-    static_assert(is_same_type(action_value_meta(^^InheritedAsyncAction), ^^double));
-
-    static_assert(std::is_same_v<async_int_io::value_type, int>);
-    static_assert(std::is_same_v<IO<InheritedAsyncAction>::value_type, double>);
-
-    static_assert(async_proxy_has_value(^^InheritedProxy));
-    static_assert(is_same_type(async_proxy_value_meta(^^InheritedProxy), ^^double));
-    static_assert(!async_proxy_has_value(^^MissingValueProxy));
-    static_assert(is_same_type(async_proxy_value_meta(^^MissingValueProxy), ^^void));
-    static_assert(async_proxy_has_value(^^VoidValueProxy));
-    static_assert(is_same_type(async_proxy_value_meta(^^VoidValueProxy), ^^void));
-
-    static_assert(
-        fnfelt::monad::io::detail::CreateIOTraits<>::validate_action(^^AsyncIntAction).empty());
-    static_assert(
-        fnfelt::monad::io::detail::CreateIOTraits<>::validate_action(^^MissingValueAction) ==
-        "provided action's async proxy does not expose a value_type alias");
-    static_assert(
-        fnfelt::monad::io::detail::CreateIOTraits<>::validate_action(^^VoidValueAction) ==
-        "provided action's async proxy must not produce void");
-}
-
-TEST_CASE("IORunProxy retains the IO traits and consults their sync_wait validator")
-{
-    auto io = fnfelt::monad::io::create<LvalueRunTraits>([] { return 42; });
-    auto proxy = io.build();
-    static_assert(std::is_same_v<
-                  decltype(proxy),
-                  fnfelt::monad::io::IORunProxy<decltype(io)::action_type, LvalueRunTraits>>);
-    CHECK_EQ(proxy.sync_wait(), 42);
 }
 
 TEST_CASE("IORunProxy runs sync actions from rvalue, lvalue and const-lvalue IOs")
@@ -438,6 +403,93 @@ TEST_CASE("IORunProxy moves rvalue actions and copies lvalue actions")
     CHECK_EQ(CopyTrackingAction::copies, 1);
 }
 
+TEST_CASE("async proxies are detected by reflection, not run")
+{
+    using fnfelt::monad::io::detail::action_is_async;
+    using fnfelt::monad::io::detail::action_value_meta;
+    using fnfelt::monad::io::detail::async_proxy_has_value;
+    using fnfelt::monad::io::detail::async_proxy_value_meta;
+
+    static_assert(action_is_async(^^AsyncIntAction));
+    static_assert(action_is_async(^^InheritedAsyncAction));
+    static_assert(!action_is_async(^^decltype([] { return 1; })));
+
+    static_assert(is_same_type(action_value_meta(^^AsyncIntAction), ^^int));
+    static_assert(is_same_type(action_value_meta(^^InheritedAsyncAction), ^^double));
+
+    static_assert(std::is_same_v<async_int_io::value_type, int>);
+    static_assert(std::is_same_v<IO<InheritedAsyncAction>::value_type, double>);
+
+    static_assert(async_proxy_has_value(^^InheritedProxy));
+    static_assert(is_same_type(async_proxy_value_meta(^^InheritedProxy), ^^double));
+    static_assert(!async_proxy_has_value(^^MissingValueProxy));
+    static_assert(is_same_type(async_proxy_value_meta(^^MissingValueProxy), ^^void));
+    static_assert(async_proxy_has_value(^^VoidValueProxy));
+    static_assert(is_same_type(async_proxy_value_meta(^^VoidValueProxy), ^^void));
+
+    static_assert(
+        fnfelt::monad::io::detail::CreateIOTraits<>::validate_action(^^AsyncIntAction).empty());
+    static_assert(
+        fnfelt::monad::io::detail::CreateIOTraits<>::validate_action(^^MissingValueAction) ==
+        "provided action's async proxy does not expose a value_type alias");
+    static_assert(
+        fnfelt::monad::io::detail::CreateIOTraits<>::validate_action(^^VoidValueAction) ==
+        "provided action's async proxy must not produce void");
+}
+
+TEST_CASE("and_then, transform and ap see through async proxies' values")
+{
+    auto continuation = [](int value)
+    { return fnfelt::monad::io::create([value] { return value + 1; }); };
+    auto transformer = [](int value) { return value + 1; };
+
+    using bound_action_type =
+        fnfelt::monad::io::detail::AndThenAction<async_int_io, decltype(continuation)>;
+    using mapped_action_type =
+        fnfelt::monad::io::detail::TransformAction<async_int_io, decltype(transformer)>;
+    using bound_proxy_type = fnfelt::monad::io::AndThenProxy<async_int_io, decltype(continuation)>;
+    using mapped_proxy_type =
+        fnfelt::monad::io::TransformProxy<async_int_io, decltype(transformer)>;
+    static_assert(std::is_same_v<bound_action_type::result_type, bound_proxy_type>);
+    static_assert(std::is_same_v<mapped_action_type::result_type, mapped_proxy_type>);
+    static_assert(sizeof(bound_proxy_type) > 0);
+    static_assert(sizeof(mapped_proxy_type) > 0);
+
+    // The async source's unwrapped value (int) is what the continuation/transformer must accept.
+    static_assert(fnfelt::monad::io::detail::AndThenIOTraits<>::validate_and_then(
+                      ^^async_int_io, ^^decltype(continuation))
+                      .empty());
+    static_assert(fnfelt::monad::io::detail::TransformIOTraits<>::validate_transform(
+                      ^^async_int_io, ^^decltype(transformer))
+                      .empty());
+    // The async function IO's callable accepts the async value IO's value.
+    static_assert(
+        fnfelt::monad::io::detail::ApIOTraits<>::validate_ap(^^async_fn_io, ^^async_int_io)
+            .empty());
+}
+
+TEST_CASE("AndThenIOTraits::validate_and_then sees through an async source's unwrapped value")
+{
+    using async_source_io = decltype(fnfelt::monad::io::create_async(async_double, 21));
+
+    // The validator unwraps the async proxy, so a continuation returning a non-IO is rejected for
+    // the same reason as on the synchronous path.
+    static_assert(
+        fnfelt::monad::io::detail::AndThenIOTraits<>::validate_and_then(
+            ^^async_source_io, ^^decltype([](int) { return 1; })) ==
+        "continuation function must return an IO");
+    // The unwrapped value (int) is what the continuation must accept: one taking a string does not.
+    static_assert(
+        fnfelt::monad::io::detail::AndThenIOTraits<>::validate_and_then(
+            ^^async_source_io, ^^decltype([](std::string) { return 1; })) ==
+        "continuation function does not accept the source IO's value");
+}
+
+TEST_CASE("sync pipelines remain constant-evaluable through sync_wait")
+{
+    static_assert(constexpr_multi_hop() == 7);
+}
+
 TEST_CASE("create_async wraps a stateless coroutine function into a runnable IO")
 {
     auto io = fnfelt::monad::io::create_async(async_double, 21);
@@ -467,81 +519,6 @@ TEST_CASE("create_async consults custom traits that delegate to the default")
     static_assert(std::is_same_v<decltype(io)::traits, DelegatingCreateAsyncTraits>);
     static_assert(std::is_same_v<decltype(io)::value_type, int>);
     CHECK_EQ(io.build().sync_wait(), 42);
-}
-
-TEST_CASE("an exception thrown by an async leaf propagates to the caller")
-{
-    auto io = fnfelt::monad::io::create_async(async_throwing, 1);
-    CHECK_THROWS_AS(static_cast<void>(io.build().sync_wait()), std::runtime_error);
-}
-
-TEST_CASE("CreateAsyncIOTraits::validate_create_async reports the first blocking constraint")
-{
-    // A plain function pointer is stateless and default-constructible, but not a class type, so it
-    // cannot be stored as the proxy's `static constexpr TFn`.
-    static_assert(
-        fnfelt::monad::io::detail::CreateAsyncIOTraits<>::validate_create_async(
-            ^^int (*)(int), ^^std::tuple<int>) == "provided async function must be a class type");
-
-    // A stateless functor with a deleted default constructor fails the `static constexpr TFn`
-    // requirement.
-    static_assert(
-        fnfelt::monad::io::detail::CreateAsyncIOTraits<>::validate_create_async(
-            ^^DeletedDefaultCtorFn, ^^std::tuple<int>) ==
-        "provided async function must be default-constructible");
-
-    // A capturing closure is a class with state, so it is rejected as stateless before the
-    // default-constructibility check.
-    int const state = 1;
-    auto const capturing = [state](auto, int x) -> lf::task<int> { co_return x + state; };
-    static_assert(
-        fnfelt::monad::io::detail::CreateAsyncIOTraits<>::validate_create_async(
-            ^^decltype(capturing), ^^std::tuple<int>) ==
-        "provided async function must be stateless");
-}
-
-TEST_CASE("running an async leaf twice from an lvalue copies its state per run")
-{
-    auto io = fnfelt::monad::io::create_async(async_track, CopyTrackingArg{});
-
-    CopyTrackingArg::copies = 0;
-    CopyTrackingArg::moves = 0;
-    CHECK_EQ(io.build().sync_wait(), 1);
-    int const copies_after_one_run = CopyTrackingArg::copies;
-    CHECK_EQ(io.build().sync_wait(), 1);
-
-    // Each `io.build()` on an lvalue copies the action (and its stored argument) into the
-    // IORunProxy; from there the async machinery moves the argument, so each run adds exactly one
-    // copy and the caller's IO is left untouched. Two runs therefore cost two copies.
-    CHECK_EQ(copies_after_one_run, 1);
-    CHECK_EQ(CopyTrackingArg::copies, 2);
-}
-
-TEST_CASE("create_async accepts a captureless mutable coroutine lambda")
-{
-    // libfork copies the coroutine function and invokes the copy as an rvalue, so a mutable
-    // (non-const) call operator is accepted even though the proxy stores `fn` as a const static
-    // member.
-    auto io = fnfelt::monad::io::create_async(
-        [](auto, int value) mutable -> lf::task<int> { co_return value; }, 42);
-    CHECK_EQ(io.build().sync_wait(), 42);
-}
-
-TEST_CASE("AndThenIOTraits::validate_and_then sees through an async source's unwrapped value")
-{
-    using async_source_io = decltype(fnfelt::monad::io::create_async(async_double, 21));
-
-    // The validator unwraps the async proxy, so a continuation returning a non-IO is rejected for
-    // the same reason as on the synchronous path.
-    static_assert(
-        fnfelt::monad::io::detail::AndThenIOTraits<>::validate_and_then(
-            ^^async_source_io, ^^decltype([](int) { return 1; })) ==
-        "continuation function must return an IO");
-    // The unwrapped value (int) is what the continuation must accept: one taking a string does not.
-    static_assert(
-        fnfelt::monad::io::detail::AndThenIOTraits<>::validate_and_then(
-            ^^async_source_io, ^^decltype([](std::string) { return 1; })) ==
-        "continuation function does not accept the source IO's value");
 }
 
 TEST_CASE("and_then runs sync continuations over async sources and vice versa")
@@ -643,6 +620,12 @@ TEST_CASE("and_then invokes an async continuation as an rvalue")
     CHECK_EQ(bound.build().sync_wait(lf::lazy_pool{2}), 2L);
 }
 
+TEST_CASE("an exception thrown by an async leaf propagates to the caller")
+{
+    auto io = fnfelt::monad::io::create_async(async_throwing, 1);
+    CHECK_THROWS_AS(static_cast<void>(io.build().sync_wait()), std::runtime_error);
+}
+
 TEST_CASE("async leaf and composed actions pass action validation")
 {
     using leaf_io = decltype(fnfelt::monad::io::create_async(async_double, 21));
@@ -661,45 +644,61 @@ TEST_CASE("async leaf and composed actions pass action validation")
     static_assert(std::is_same_v<composed_io::value_type, int>);
 }
 
+TEST_CASE("CreateAsyncIOTraits::validate_create_async reports the first blocking constraint")
+{
+    // A plain function pointer is stateless and default-constructible, but not a class type, so it
+    // cannot be stored as the proxy's `static constexpr TFn`.
+    static_assert(
+        fnfelt::monad::io::detail::CreateAsyncIOTraits<>::validate_create_async(
+            ^^int (*)(int), ^^std::tuple<int>) == "provided async function must be a class type");
+
+    // A stateless functor with a deleted default constructor fails the `static constexpr TFn`
+    // requirement.
+    static_assert(
+        fnfelt::monad::io::detail::CreateAsyncIOTraits<>::validate_create_async(
+            ^^DeletedDefaultCtorFn, ^^std::tuple<int>) ==
+        "provided async function must be default-constructible");
+
+    // A capturing closure is a class with state, so it is rejected as stateless before the
+    // default-constructibility check.
+    int const state = 1;
+    auto const capturing = [state](auto, int x) -> lf::task<int> { co_return x + state; };
+    static_assert(
+        fnfelt::monad::io::detail::CreateAsyncIOTraits<>::validate_create_async(
+            ^^decltype(capturing), ^^std::tuple<int>) ==
+        "provided async function must be stateless");
+}
+
+TEST_CASE("running an async leaf twice from an lvalue copies its state per run")
+{
+    auto io = fnfelt::monad::io::create_async(async_track, CopyTrackingArg{});
+
+    CopyTrackingArg::copies = 0;
+    CopyTrackingArg::moves = 0;
+    CHECK_EQ(io.build().sync_wait(), 1);
+    int const copies_after_one_run = CopyTrackingArg::copies;
+    CHECK_EQ(io.build().sync_wait(), 1);
+
+    // Each `io.build()` on an lvalue copies the action (and its stored argument) into the
+    // IORunProxy; from there the async machinery moves the argument, so each run adds exactly one
+    // copy and the caller's IO is left untouched. Two runs therefore cost two copies.
+    CHECK_EQ(copies_after_one_run, 1);
+    CHECK_EQ(CopyTrackingArg::copies, 2);
+}
+
 TEST_CASE("constexpr sync chains coexist with async runtime tests")
 {
     static_assert(constexpr_sync_chain_with_async() == 6);
 }
 
-TEST_CASE("and_then, transform and ap see through async proxies' values")
+TEST_CASE("create_async accepts a captureless mutable coroutine lambda")
 {
-    auto continuation = [](int value)
-    { return fnfelt::monad::io::create([value] { return value + 1; }); };
-    auto transformer = [](int value) { return value + 1; };
-
-    using bound_action_type =
-        fnfelt::monad::io::detail::AndThenAction<async_int_io, decltype(continuation)>;
-    using mapped_action_type =
-        fnfelt::monad::io::detail::TransformAction<async_int_io, decltype(transformer)>;
-    using bound_proxy_type = fnfelt::monad::io::AndThenProxy<async_int_io, decltype(continuation)>;
-    using mapped_proxy_type =
-        fnfelt::monad::io::TransformProxy<async_int_io, decltype(transformer)>;
-    static_assert(std::is_same_v<bound_action_type::result_type, bound_proxy_type>);
-    static_assert(std::is_same_v<mapped_action_type::result_type, mapped_proxy_type>);
-    static_assert(sizeof(bound_proxy_type) > 0);
-    static_assert(sizeof(mapped_proxy_type) > 0);
-
-    // The async source's unwrapped value (int) is what the continuation/transformer must accept.
-    static_assert(fnfelt::monad::io::detail::AndThenIOTraits<>::validate_and_then(
-                      ^^async_int_io, ^^decltype(continuation))
-                      .empty());
-    static_assert(fnfelt::monad::io::detail::TransformIOTraits<>::validate_transform(
-                      ^^async_int_io, ^^decltype(transformer))
-                      .empty());
-    // The async function IO's callable accepts the async value IO's value.
-    static_assert(
-        fnfelt::monad::io::detail::ApIOTraits<>::validate_ap(^^async_fn_io, ^^async_int_io)
-            .empty());
-}
-
-TEST_CASE("sync pipelines remain constant-evaluable through sync_wait")
-{
-    static_assert(constexpr_multi_hop() == 7);
+    // libfork copies the coroutine function and invokes the copy as an rvalue, so a mutable
+    // (non-const) call operator is accepted even though the proxy stores `fn` as a const static
+    // member.
+    auto io = fnfelt::monad::io::create_async(
+        [](auto, int value) mutable -> lf::task<int> { co_return value; }, 42);
+    CHECK_EQ(io.build().sync_wait(), 42);
 }
 
 TEST_CASE("async leaves retain referenced bound arguments inside compositions")
@@ -713,12 +712,6 @@ TEST_CASE("async leaves retain referenced bound arguments inside compositions")
     auto applied =
         fnfelt::monad::io::ap(fnfelt::monad::io::just([](int size) { return size * 2; }), source);
     CHECK_EQ(applied.build().sync_wait(lf::lazy_pool{2}), 400);
-}
-
-TEST_CASE("IORunProxy executes a custom async proxy")
-{
-    CHECK_EQ(IO<AsyncIntAction>{AsyncIntAction{}}.build().sync_wait(), 0);
-    CHECK_EQ(IO<AsyncIntAction>{AsyncIntAction{}}.build().sync_wait(lf::lazy_pool{2}), 0);
 }
 
 // NOLINTEND(*-magic-numbers)

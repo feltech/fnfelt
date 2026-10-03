@@ -28,6 +28,7 @@ target_sources(
          ${PROJECT_SOURCE_DIR}/include/fnfelt/detail/callable_shape.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/detail/invocability.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/detail/type_names.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/fwd.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/and_then.hpp
@@ -120,7 +121,8 @@ if(${PROJECT_NAME}_ENABLE_DEV)
     monad/io/sequence.cpp
     monad/io/traverse.cpp
     monad/io/async.cpp
-    monad/io/IO.cpp)
+    monad/io/IO.cpp
+    monad/io.cpp)
   set(_main_target ${PROJECT_NAME}.main)
   target_link_libraries(${_main_target} PRIVATE doctest::doctest ${PROJECT_NAME}.lib)
   fnfelt_target_linters(${_main_target})

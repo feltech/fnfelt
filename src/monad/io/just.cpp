@@ -14,6 +14,7 @@
 #include <type_traits>
 #include <utility>
 
+#include <fnfelt/monad/io.hpp>
 #include <fnfelt/static_string.hpp>
 
 // Magic numbers are used in tests.

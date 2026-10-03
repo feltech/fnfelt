@@ -6,8 +6,7 @@
 
 #include <string_view>
 
-#include <fnfelt/monad/io/IO.hpp>
-#include <fnfelt/monad/io/async.hpp>
+#include <fnfelt/monad/io.hpp>
 
 // RejectAsync is a custom traits type whose validate_action accepts the valid async leaf action,
 // but whose validate_create_async rejects every function/argument pair, so create_async must fail
