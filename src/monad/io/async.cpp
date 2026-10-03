@@ -20,6 +20,7 @@
 
 #include <fnfelt/monad/io/IO.hpp>
 #include <fnfelt/monad/io/async.hpp>
+#include <fnfelt/monad/io/create.hpp>
 
 // Magic numbers are used in tests.
 // NOLINTBEGIN(*-magic-numbers)
@@ -273,6 +274,72 @@ TEST_CASE("async proxies are detected by reflection, not run")
     static_assert(
         fnfelt::monad::io::detail::CreateIOTraits<>::validate_action(^^VoidValueAction) ==
         "provided action's async proxy must not produce void");
+}
+
+TEST_CASE("IORunProxy retains the IO traits and consults their sync_wait validator")
+{
+    auto io = fnfelt::monad::io::create<LvalueRunTraits>([] { return 42; });
+    auto proxy = io.build();
+    static_assert(std::is_same_v<
+                  decltype(proxy),
+                  fnfelt::monad::io::IORunProxy<decltype(io)::action_type, LvalueRunTraits>>);
+    CHECK_EQ(proxy.sync_wait(), 42);
+}
+
+TEST_CASE("IORunProxy runs sync actions from rvalue, lvalue and const-lvalue IOs")
+{
+    auto io = fnfelt::monad::io::create([] { return 1; });
+    auto const const_io = fnfelt::monad::io::create([] { return 2; });
+
+    CHECK_EQ(fnfelt::monad::io::create([] { return 0; }).build().sync_wait(), 0);
+    CHECK_EQ(io.build().sync_wait(), 1);
+    CHECK_EQ(const_io.build().sync_wait(), 2);
+}
+
+TEST_CASE("IORunProxy runs a mutable action, which is only callable as an rvalue")
+{
+    // A mutable lambda has no const lvalue call operator; the run proxy copies it out of the lvalue
+    // IO and invokes it as an rvalue, so the non-const call operator is selected.
+    auto io = fnfelt::monad::io::create([value = 1] mutable { return value; });
+    CHECK_EQ(io.build().sync_wait(), 1);
+}
+
+TEST_CASE("IORunProxy accepts and ignores scheduler arguments on the sync path")
+{
+    auto io = fnfelt::monad::io::create([] { return 5; });
+    CHECK_EQ(io.build().sync_wait(MockPool{}), 5);
+
+    // Also constant-evaluable with a scheduler argument.
+    static_assert(fnfelt::monad::io::create([] { return 6; }).build().sync_wait(MockPool{}) == 6);
+}
+
+TEST_CASE("IORunProxy moves rvalue actions and copies lvalue actions")
+{
+    auto io = fnfelt::monad::io::create(CopyTrackingAction{});
+    static_assert(std::is_same_v<decltype(io)::action_type, CopyTrackingAction>);
+
+    // Rvalue IO: the action is moved into the proxy.
+    CopyTrackingAction::moves = 0;
+    CopyTrackingAction::copies = 0;
+    CHECK_EQ(std::move(io).build().sync_wait(), 1);
+    CHECK_EQ(CopyTrackingAction::moves, 1);
+    CHECK_EQ(CopyTrackingAction::copies, 0);
+
+    // Mutable lvalue IO: the action is copied into the proxy.
+    auto lvalue_io = fnfelt::monad::io::create(CopyTrackingAction{});
+    CopyTrackingAction::moves = 0;
+    CopyTrackingAction::copies = 0;
+    CHECK_EQ(lvalue_io.build().sync_wait(), 1);
+    CHECK_EQ(CopyTrackingAction::moves, 0);
+    CHECK_EQ(CopyTrackingAction::copies, 1);
+
+    // Const-lvalue IO: the action is copied into the proxy.
+    auto const const_io = fnfelt::monad::io::create(CopyTrackingAction{});
+    CopyTrackingAction::moves = 0;
+    CopyTrackingAction::copies = 0;
+    CHECK_EQ(const_io.build().sync_wait(), 1);
+    CHECK_EQ(CopyTrackingAction::moves, 0);
+    CHECK_EQ(CopyTrackingAction::copies, 1);
 }
 
 TEST_CASE("IORunProxy executes a custom async proxy")

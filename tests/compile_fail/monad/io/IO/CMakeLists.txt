@@ -5,6 +5,13 @@
 set(_prefix monad.io.IO)
 
 fnfelt_test_compile_fail(
+  ${_prefix}.custom_traits
+  SOURCE
+  custom_traits.cpp
+  ERROR_REGEX
+  "fnfelt: IO action is invalid: rejected by custom action traits")
+
+fnfelt_test_compile_fail(
   ${_prefix}.sync_wait_custom_traits
   SOURCE
   sync_wait_custom_traits.cpp

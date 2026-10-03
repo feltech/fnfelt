@@ -34,6 +34,7 @@ target_sources(
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/create.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/fwd.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/async.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/create.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/IO.hpp)
 
 set(_package_config_dir ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME})
@@ -84,6 +85,7 @@ if(${PROJECT_NAME}_ENABLE_DEV)
     detail/type_names.cpp
     monad/io/detail.cpp
     monad/io/traits.cpp
+    monad/io/create.cpp
     monad/io/async.cpp
     monad/io/IO.cpp)
   set(_main_target ${PROJECT_NAME}.main)
