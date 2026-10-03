@@ -21,14 +21,9 @@
 #include <immer/array.hpp>
 #include <immer/memory_policy.hpp>
 
-#include <fnfelt/monad/io/IO.hpp>
+#include <fnfelt/monad/io.hpp>
 #include <fnfelt/monad/io/and_then.hpp>
 #include <fnfelt/monad/io/ap.hpp>
-#include <fnfelt/monad/io/async.hpp>
-#include <fnfelt/monad/io/create.hpp>
-#include <fnfelt/monad/io/just.hpp>
-#include <fnfelt/monad/io/sequence.hpp>
-#include <fnfelt/monad/io/transform.hpp>
 #include <fnfelt/static_string.hpp>
 
 #include "detail/launch_failure.hpp"

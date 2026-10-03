@@ -8,8 +8,7 @@
 
 #include <immer/array.hpp>
 
-#include <fnfelt/monad/io/just.hpp>
-#include <fnfelt/monad/io/sequence.hpp>
+#include <fnfelt/monad/io.hpp>
 
 namespace
 {

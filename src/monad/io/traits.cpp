@@ -612,69 +612,6 @@ TEST_CASE("CreateIOTraits::is_io delegates to the detail::is_io free helper")
     static_assert(!fnfelt::monad::io::detail::is_io(^^int));
 }
 
-TEST_CASE("CreateIOTraits::validate_action accepts async proxies and rejects malformed ones")
-{
-    using CreateIOTraits = fnfelt::monad::io::detail::CreateIOTraits<>;
-
-    // A tag-deriving action whose proxy exposes a non-void `value_type` alias is valid.
-    static_assert(CreateIOTraits::validate_action(^^AsyncAction).empty());
-    // A proxy without a `value_type` alias is rejected with a specific reason.
-    static_assert(
-        CreateIOTraits::validate_action(^^MissingValueAction) ==
-        "provided action's async proxy does not expose a value_type alias");
-    // A proxy whose `value_type` alias is void is rejected with a specific reason.
-    static_assert(
-        CreateIOTraits::validate_action(^^VoidValueAction) ==
-        "provided action's async proxy must not produce void");
-    // A reference to a valid async proxy is still rejected: the reference check applies to both the
-    // synchronous and asynchronous paths.
-    static_assert(
-        CreateIOTraits::validate_action(^^ReferenceAsyncAction) ==
-        "provided action returns a reference, return by value instead");
-}
-
-TEST_CASE("CreateIOTraits::validate_async_proxy checks the executable proxy shape")
-{
-    using CreateIOTraits = fnfelt::monad::io::detail::CreateIOTraits<>;
-
-    // An executable proxy and one with identical inherited `value_type` aliases are accepted.
-    static_assert(CreateIOTraits::validate_async_proxy(^^AsyncProxy<int>).empty());
-    static_assert(CreateIOTraits::validate_async_proxy(^^SameAliasProxy).empty());
-
-    // Two bases exposing different `value_type` alias targets are ambiguous.
-    static_assert(
-        CreateIOTraits::validate_async_proxy(^^AmbiguousProxy) ==
-        "provided action's async proxy exposes ambiguous value_type aliases");
-    // The stored arg member is required, and must be a std::tuple.
-    static_assert(
-        CreateIOTraits::validate_async_proxy(^^MissingArgProxy) ==
-        "provided action's async proxy must expose an arg member");
-    static_assert(
-        CreateIOTraits::validate_async_proxy(^^NonTupleArgProxy) ==
-        "provided action's async proxy arg member must be a std::tuple");
-    // The static fn entry is required.
-    static_assert(
-        CreateIOTraits::validate_async_proxy(^^MissingFnProxy) ==
-        "provided action's async proxy must expose a static fn member");
-    // fn must return an lf::task.
-    static_assert(
-        CreateIOTraits::validate_async_proxy(^^NonTaskFnProxy) ==
-        "provided action's async proxy fn must return an lf::task");
-    // The unwrapped value is subject to the plain-result rules.
-    static_assert(
-        CreateIOTraits::validate_async_proxy(^^ReferenceValueProxy) ==
-        "provided action's async proxy value must not be a reference type");
-    static_assert(
-        CreateIOTraits::validate_async_proxy(^^IOValueProxy) ==
-        "provided action's async proxy value should not be an IO");
-    static_assert(
-        CreateIOTraits::validate_async_proxy(^^IncompleteValueProxy) ==
-        "provided action's async proxy value is not a complete type");
-    static_assert(
-        CreateIOTraits::validate_async_proxy(^^NonMovableValueProxy) ==
-        "provided action's async proxy value must be movable");
-}
-
 TEST_CASE("AndThenIOTraits::validate_and_then accepts direct and spread continuation types")
 {
     using fnfelt::monad::io::IO;
@@ -1161,6 +1098,69 @@ TEST_CASE("ApIOTraits::validate_ap accepts direct and spread callable types")
         ApIOTraits::validate_ap(
             ^^IO<decltype(two_arg_void_fn_action)>, ^^IO<std::pair<int, int> (*)()>) ==
         "IO-wrapped function's callable does not return a value");
+}
+
+TEST_CASE("CreateIOTraits::validate_action accepts async proxies and rejects malformed ones")
+{
+    using CreateIOTraits = fnfelt::monad::io::detail::CreateIOTraits<>;
+
+    // A tag-deriving action whose proxy exposes a non-void `value_type` alias is valid.
+    static_assert(CreateIOTraits::validate_action(^^AsyncAction).empty());
+    // A proxy without a `value_type` alias is rejected with a specific reason.
+    static_assert(
+        CreateIOTraits::validate_action(^^MissingValueAction) ==
+        "provided action's async proxy does not expose a value_type alias");
+    // A proxy whose `value_type` alias is void is rejected with a specific reason.
+    static_assert(
+        CreateIOTraits::validate_action(^^VoidValueAction) ==
+        "provided action's async proxy must not produce void");
+    // A reference to a valid async proxy is still rejected: the reference check applies to both the
+    // synchronous and asynchronous paths.
+    static_assert(
+        CreateIOTraits::validate_action(^^ReferenceAsyncAction) ==
+        "provided action returns a reference, return by value instead");
+}
+
+TEST_CASE("CreateIOTraits::validate_async_proxy checks the executable proxy shape")
+{
+    using CreateIOTraits = fnfelt::monad::io::detail::CreateIOTraits<>;
+
+    // An executable proxy and one with identical inherited `value_type` aliases are accepted.
+    static_assert(CreateIOTraits::validate_async_proxy(^^AsyncProxy<int>).empty());
+    static_assert(CreateIOTraits::validate_async_proxy(^^SameAliasProxy).empty());
+
+    // Two bases exposing different `value_type` alias targets are ambiguous.
+    static_assert(
+        CreateIOTraits::validate_async_proxy(^^AmbiguousProxy) ==
+        "provided action's async proxy exposes ambiguous value_type aliases");
+    // The stored arg member is required, and must be a std::tuple.
+    static_assert(
+        CreateIOTraits::validate_async_proxy(^^MissingArgProxy) ==
+        "provided action's async proxy must expose an arg member");
+    static_assert(
+        CreateIOTraits::validate_async_proxy(^^NonTupleArgProxy) ==
+        "provided action's async proxy arg member must be a std::tuple");
+    // The static fn entry is required.
+    static_assert(
+        CreateIOTraits::validate_async_proxy(^^MissingFnProxy) ==
+        "provided action's async proxy must expose a static fn member");
+    // fn must return an lf::task.
+    static_assert(
+        CreateIOTraits::validate_async_proxy(^^NonTaskFnProxy) ==
+        "provided action's async proxy fn must return an lf::task");
+    // The unwrapped value is subject to the plain-result rules.
+    static_assert(
+        CreateIOTraits::validate_async_proxy(^^ReferenceValueProxy) ==
+        "provided action's async proxy value must not be a reference type");
+    static_assert(
+        CreateIOTraits::validate_async_proxy(^^IOValueProxy) ==
+        "provided action's async proxy value should not be an IO");
+    static_assert(
+        CreateIOTraits::validate_async_proxy(^^IncompleteValueProxy) ==
+        "provided action's async proxy value is not a complete type");
+    static_assert(
+        CreateIOTraits::validate_async_proxy(^^NonMovableValueProxy) ==
+        "provided action's async proxy value must be movable");
 }
 
 TEST_CASE("JustIOTraits::validate_just checks the lifted value")

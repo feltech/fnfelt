@@ -7,6 +7,7 @@
 #include <string_view>
 
 #include <fnfelt/monad/io/IO.hpp>
+#include <fnfelt/monad/io/just.hpp>
 
 namespace
 {

@@ -20,13 +20,7 @@
 #include <immer/array.hpp>
 
 #include <fnfelt/detail/type_names.hpp>
-#include <fnfelt/monad/io/IO.hpp>
-#include <fnfelt/monad/io/async.hpp>
-#include <fnfelt/monad/io/create.hpp>
-#include <fnfelt/monad/io/just.hpp>
-#include <fnfelt/monad/io/sequence.hpp>
-#include <fnfelt/monad/io/transform.hpp>
-#include <fnfelt/monad/io/traverse.hpp>
+#include <fnfelt/monad/io.hpp>
 #include <fnfelt/static_string.hpp>
 
 // Magic numbers are used in tests.

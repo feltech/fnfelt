@@ -12,19 +12,7 @@ target_precompile_headers(
   ${_pch_target}
   PRIVATE
   <meta>
-  <fnfelt/monad/io/IO.hpp>
-  <fnfelt/monad/io/and_then.hpp>
-  <fnfelt/monad/io/ap.hpp>
-  <fnfelt/monad/io/async.hpp>
-  <fnfelt/monad/io/create.hpp>
-  <fnfelt/monad/io/fanout.hpp>
-  <fnfelt/monad/io/just.hpp>
-  <fnfelt/monad/io/repeat_until.hpp>
-  <fnfelt/monad/io/sequence.hpp>
-  <fnfelt/monad/io/split.hpp>
-  <fnfelt/monad/io/tap.hpp>
-  <fnfelt/monad/io/transform.hpp>
-  <fnfelt/monad/io/traverse.hpp>)
+  <fnfelt/monad/io.hpp>)
 
 # fnfelt_compile_fail(<name> SOURCE <file.cpp> ERROR_REGEX <regex>)
 #
