@@ -14,6 +14,7 @@ target_precompile_headers(
   <meta>
   <fnfelt/monad/io/IO.hpp>
   <fnfelt/monad/io/and_then.hpp>
+  <fnfelt/monad/io/ap.hpp>
   <fnfelt/monad/io/async.hpp>
   <fnfelt/monad/io/create.hpp>
   <fnfelt/monad/io/just.hpp>)
