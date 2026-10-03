@@ -13,6 +13,7 @@
 #include <utility>
 
 #include <fnfelt/monad/io/IO.hpp>
+#include <fnfelt/monad/io/detail/and_then.hpp>
 #include <fnfelt/monad/io/detail/create.hpp>
 #include <fnfelt/monad/io/detail/just.hpp>
 
@@ -669,6 +670,123 @@ TEST_CASE("CreateIOTraits::validate_async_proxy checks the executable proxy shap
     static_assert(
         CreateIOTraits::validate_async_proxy(^^NonMovableValueProxy) ==
         "provided action's async proxy value must be movable");
+}
+
+TEST_CASE("AndThenIOTraits::validate_and_then accepts direct and spread continuation types")
+{
+    using fnfelt::monad::io::IO;
+    using AndThenIOTraits = fnfelt::monad::io::detail::AndThenIOTraits<>;
+
+    // Direct: the continuation takes the value as a single argument.
+    static_assert(AndThenIOTraits::validate_and_then(
+                      ^^IO<int (*)()>, ^^decltype([](int) {
+        using action_t = decltype([] { return 1; });
+        return IO<action_t>{action_t{}};
+    }))
+                      .empty());
+    // Spread over pair.
+    static_assert(AndThenIOTraits::validate_and_then(
+                      ^^IO<std::pair<int, int> (*)()>,
+                      ^^decltype([](int, int) {
+        using action_t = decltype([] { return 1; });
+        return IO<action_t>{action_t{}};
+    }))
+                      .empty());
+    // Spread over tuple.
+    static_assert(AndThenIOTraits::validate_and_then(
+                      ^^IO<std::tuple<int, int> (*)()>,
+                      ^^decltype([](int, int) {
+        using action_t = decltype([] { return 1; });
+        return IO<action_t>{action_t{}};
+    }))
+                      .empty());
+    // Callable struct and function pointer continuation.
+    static_assert(AndThenIOTraits::validate_and_then(^^IO<int (*)()>, ^^ValidContinuation).empty());
+    static_assert(
+        AndThenIOTraits::validate_and_then(^^IO<int (*)()>, ^^IO<int (*)()> (*)(int)).empty());
+    // Source IO with custom traits is still accepted.
+    static_assert(
+        AndThenIOTraits::validate_and_then(^^IO<int (*)(), CustomIOTraits>, ^^ValidContinuation)
+            .empty());
+}
+
+TEST_CASE("AndThenIOTraits::validate_and_then models the continuation's rvalue receiver")
+{
+    using fnfelt::monad::io::IO;
+    using fnfelt::monad::io::detail::io_value_meta;
+    using AndThenIOTraits = fnfelt::monad::io::detail::AndThenIOTraits<>;
+
+    // Accepted, and the value of the IO the `&&` overload returns agrees with the contract.
+    static_assert(
+        AndThenIOTraits::validate_and_then(^^IO<int (*)()>, ^^RefQualifiedContinuation).empty());
+    constexpr std::meta::info continuation_io_meta =
+        invoke_result(^^RefQualifiedContinuation, {^^int});
+    // NOLINTNEXTLINE(runtime/int): the `&&` overload returns the fundamental `long`.
+    static_assert(is_same_type(io_value_meta(continuation_io_meta), ^^long));
+}
+
+TEST_CASE("AndThenIOTraits::validate_and_then rejects non-IO sources with the exact reason")
+{
+    using fnfelt::monad::io::IO;
+    using AndThenIOTraits = fnfelt::monad::io::detail::AndThenIOTraits<>;
+
+    static_assert(
+        AndThenIOTraits::validate_and_then(^^int, ^^ValidContinuation) == "source IO is not an IO");
+}
+
+TEST_CASE("AndThenIOTraits::validate_and_then rejects continuation types with the exact reason")
+{
+    using fnfelt::monad::io::IO;
+    using AndThenIOTraits = fnfelt::monad::io::detail::AndThenIOTraits<>;
+
+    // Void source value: an IO whose action produces no value cannot feed a continuation. The
+    // reflection does not instantiate the IO's class-scope action validation.
+    static_assert(
+        AndThenIOTraits::validate_and_then(^^IO<void (*)()>, ^^decltype([](int) { return 1; })) ==
+        "source IO produces no value");
+    // Incomplete continuation.
+    static_assert(
+        AndThenIOTraits::validate_and_then(^^IO<int (*)()>, ^^Incomplete) ==
+        "continuation function is not a complete type");
+    // Reference continuation.
+    static_assert(
+        AndThenIOTraits::validate_and_then(^^IO<int (*)()>, ^^decltype([](int) { return 1; }) &) ==
+        "continuation function must not be a reference type");
+    // Non-class, non-function-pointer continuation.
+    static_assert(
+        AndThenIOTraits::validate_and_then(^^IO<int (*)()>, ^^int) ==
+        "continuation function is not a class or function pointer type");
+    // Non-move-constructible continuation.
+    static_assert(
+        AndThenIOTraits::validate_and_then(^^IO<int (*)()>, ^^NonMovableContinuation) ==
+        "continuation function must be move constructible");
+    // Does not accept the source IO's value.
+    static_assert(
+        AndThenIOTraits::validate_and_then(
+            ^^IO<int (*)()>, ^^decltype([](std::string) { return 1; })) ==
+        "continuation function does not accept the source IO's value");
+    static_assert(
+        AndThenIOTraits::validate_and_then(
+            ^^IO<int (*)()>, ^^decltype([](int, int) { return 1; })) ==
+        "continuation function does not accept the source IO's value");
+    // A non-tuple source value with all-type template arguments (e.g. std::optional<int>) is not
+    // spread, even though a callable taking its single element would be structurally invocable.
+    static_assert(
+        AndThenIOTraits::validate_and_then(
+            ^^IO<std::optional<int> (*)()>, ^^decltype([](int) {
+        using action_t = decltype([] { return 1; });
+        return IO<action_t>{action_t{}};
+    })) ==
+        "continuation function does not accept the source IO's value");
+    // Callable but returns a non-IO.
+    static_assert(
+        AndThenIOTraits::validate_and_then(^^IO<int (*)()>, ^^decltype([](int) { return 1; })) ==
+        "continuation function must return an IO");
+    // Spread-callable but returns a non-IO.
+    static_assert(
+        AndThenIOTraits::validate_and_then(
+            ^^IO<std::pair<int, int> (*)()>, ^^decltype([](int, int) { return 1; })) ==
+        "continuation function must return an IO");
 }
 
 TEST_CASE("JustIOTraits::validate_just checks the lifted value")
