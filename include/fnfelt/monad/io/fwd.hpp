@@ -43,6 +43,10 @@ struct JustIOTraits;
 template <char const * name_cstr = detail::default_io_name>
 struct AndThenIOTraits;
 
+/// Traits validating the IO-wrapped function and value provided to `io::ap`.
+template <char const * name_cstr = detail::default_io_name>
+struct ApIOTraits;
+
 template <class TAction, class TTraits = CreateIOTraits<>>
 class IO;
 

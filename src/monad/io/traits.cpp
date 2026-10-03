@@ -13,6 +13,7 @@
 
 #include <fnfelt/monad/io/IO.hpp>
 #include <fnfelt/monad/io/detail/and_then.hpp>
+#include <fnfelt/monad/io/detail/ap.hpp>
 #include <fnfelt/monad/io/detail/create.hpp>
 #include <fnfelt/monad/io/detail/just.hpp>
 
@@ -130,6 +131,25 @@ constexpr auto inner_io_action = []
     using action_t = decltype([] { return false; });
     return fnfelt::monad::io::IO<action_t>{action_t{}};
 };
+
+/// Action returning a callable taking an int - a valid ap function IO action.
+constexpr auto int_fn_action = [] { return [](int) { return 1; }; };
+
+/// Action returning a callable taking a std::string - incompatible with an int value.
+constexpr auto string_fn_action = [] { return [](std::string) { return 1; }; };
+
+/// Action returning a callable taking two ints - spread-fed by ap.
+constexpr auto two_arg_fn_action = [] { return [](int, int) { return 1; }; };
+
+/// Action returning a callable taking a pair as a single argument - compatible via ap.
+constexpr auto pair_fn_action = []
+{ return [](std::pair<int, int> pair_value) { return pair_value.first + pair_value.second; }; };
+
+/// Action returning a callable taking an int and returning void - must fail ap validation.
+constexpr auto void_fn_action = [] { return [](int) {}; };
+
+/// Action returning a callable taking two ints and returning void - spread-fed but must fail ap.
+constexpr auto two_arg_void_fn_action = [] { return [](int, int) {}; };
 
 inline constexpr char custom_io_name[] = "CustomIO";
 using CustomIOTraits = fnfelt::monad::io::CreateIOTraits<custom_io_name>;
@@ -368,6 +388,86 @@ TEST_CASE("AndThenIOTraits::validate_and_then rejects continuation types with th
         AndThenIOTraits::validate_and_then(
             ^^IO<std::pair<int, int> (*)()>, ^^decltype([](int, int) { return 1; })) ==
         "continuation function must return an IO");
+}
+
+TEST_CASE("ApIOTraits::validate_ap accepts compatible function and value IOs")
+{
+    using fnfelt::monad::io::IO;
+    using ApIOTraits = fnfelt::monad::io::ApIOTraits<>;
+
+    // The IO-wrapped function's callable accepts the IO-wrapped value's value.
+    static_assert(ApIOTraits::validate_ap(^^IO<decltype(int_fn_action)>, ^^IO<int (*)()>).empty());
+    static_assert(
+        ApIOTraits::validate_ap(^^IO<decltype(int_fn_action), CustomIOTraits>, ^^IO<int (*)()>)
+            .empty());
+}
+
+TEST_CASE("ApIOTraits::validate_ap rejects non-IO arguments with the exact reason")
+{
+    using fnfelt::monad::io::IO;
+    using ApIOTraits = fnfelt::monad::io::ApIOTraits<>;
+
+    static_assert(
+        ApIOTraits::validate_ap(^^int, ^^IO<int (*)()>) == "IO-wrapped function is not an IO");
+    static_assert(
+        ApIOTraits::validate_ap(^^IO<int (*)()>, ^^int) == "IO-wrapped value is not an IO");
+    // Both non-IO: the function is checked first.
+    static_assert(ApIOTraits::validate_ap(^^int, ^^int) == "IO-wrapped function is not an IO");
+}
+
+TEST_CASE("ApIOTraits::validate_ap rejects incompatible function and value IOs")
+{
+    using fnfelt::monad::io::IO;
+    using ApIOTraits = fnfelt::monad::io::ApIOTraits<>;
+
+    // The IO-wrapped function's callable does not accept the IO-wrapped value's value.
+    static_assert(
+        ApIOTraits::validate_ap(^^IO<decltype(string_fn_action)>, ^^IO<int (*)()>) ==
+        "IO-wrapped function's callable does not accept the IO-wrapped value's value");
+}
+
+TEST_CASE("ApIOTraits::validate_ap rejects a function IO whose callable returns void")
+{
+    using fnfelt::monad::io::IO;
+    using ApIOTraits = fnfelt::monad::io::ApIOTraits<>;
+
+    // The application itself produces no value.
+    static_assert(
+        ApIOTraits::validate_ap(^^IO<decltype(void_fn_action)>, ^^IO<int (*)()>) ==
+        "IO-wrapped function's callable does not return a value");
+}
+
+TEST_CASE("ApIOTraits::validate_ap accepts direct and spread callable types")
+{
+    using fnfelt::monad::io::IO;
+    using ApIOTraits = fnfelt::monad::io::ApIOTraits<>;
+
+    // Spread over pair.
+    static_assert(
+        ApIOTraits::validate_ap(^^IO<decltype(two_arg_fn_action)>, ^^IO<std::pair<int, int> (*)()>)
+            .empty());
+    // Spread over tuple.
+    static_assert(
+        ApIOTraits::validate_ap(^^IO<decltype(two_arg_fn_action)>, ^^IO<std::tuple<int, int> (*)()>)
+            .empty());
+    // Non-spreadable value: a two-argument callable is incompatible with an int value.
+    static_assert(
+        ApIOTraits::validate_ap(^^IO<decltype(two_arg_fn_action)>, ^^IO<int (*)()>) ==
+        "IO-wrapped function's callable does not accept the IO-wrapped value's value");
+    // A callable taking the whole pair as a single argument is accepted directly.
+    static_assert(
+        ApIOTraits::validate_ap(^^IO<decltype(pair_fn_action)>, ^^IO<std::pair<int, int> (*)()>)
+            .empty());
+    // A non-tuple value with all-type template arguments (e.g. std::optional<int>) is not spread,
+    // even though the callable would accept its single element structurally.
+    static_assert(
+        ApIOTraits::validate_ap(^^IO<decltype(int_fn_action)>, ^^IO<std::optional<int> (*)()>) ==
+        "IO-wrapped function's callable does not accept the IO-wrapped value's value");
+    // Spread-invocable but returns void.
+    static_assert(
+        ApIOTraits::validate_ap(
+            ^^IO<decltype(two_arg_void_fn_action)>, ^^IO<std::pair<int, int> (*)()>) ==
+        "IO-wrapped function's callable does not return a value");
 }
 
 TEST_CASE("JustIOTraits::validate_just checks the lifted value")
