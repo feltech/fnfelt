@@ -9,6 +9,11 @@
  */
 #pragma once
 
+#include <meta>
+
+#include <fnfelt/monad/io/detail/fwd.hpp>
+#include <fnfelt/static_string.hpp>
+
 namespace fnfelt::monad::io
 {
 // Declare IO before including detail/create.hpp: the detail headers reflect on it (^^IO), and the
@@ -34,6 +39,10 @@ struct CreateIOTraits;
 template <char const * name_cstr = detail::default_io_name>
 struct JustIOTraits;
 
+/// Traits validating the source IO and continuation function provided to `io::and_then`.
+template <char const * name_cstr = detail::default_io_name>
+struct AndThenIOTraits;
+
 template <class TAction, class TTraits = CreateIOTraits<>>
 class IO;
 
@@ -45,4 +54,14 @@ template <class TTraits = CreateIOTraits<>, class TAction>
 
 template <char const * name_cstr, class TAction>
 [[nodiscard]] constexpr auto create(TAction && action);
+
+// Forward declarations for the free and_then functions used by IO's member and_then overloads;
+// defined and documented in and_then.hpp. The IOs are taken by forwarding reference so rvalue
+// chains move and lvalues are copied, and the member's `self` may be an lvalue or an rvalue.
+// Invalid pairs (including non-IO sources) are rejected by validation inside the definitions.
+template <class TTraits = AndThenIOTraits<>, class TSource, class TContinuation>
+[[nodiscard]] constexpr auto and_then(TSource && source, TContinuation && continuation);
+
+template <char const * name_cstr, class TSource, class TContinuation>
+[[nodiscard]] constexpr auto and_then(TSource && source, TContinuation && continuation);
 }  // namespace fnfelt::monad::io

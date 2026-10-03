@@ -142,6 +142,35 @@ TEST_CASE("detail::action_value_meta reflects the action's result")
     static_assert(is_same_type(action_value_meta(^^Incomplete), ^^void));
 }
 
+TEST_CASE("detail::io_action_meta reflects an IO's wrapped action")
+{
+    using fnfelt::monad::io::CreateIOTraits;
+    using fnfelt::monad::io::IO;
+    using fnfelt::monad::io::detail::io_action_meta;
+
+    using CustomIOTraits = CreateIOTraits<custom_io_name>;
+
+    // The action reflection is exposed for IOs with any traits.
+    static_assert(is_same_type(io_action_meta(^^IO<int (*)()>), ^^int (*)()));
+    static_assert(is_same_type(io_action_meta(^^IO<int (*)(), CustomIOTraits>), ^^int (*)()));
+    // Non-IO types have no wrapped action.
+    static_assert(is_same_type(io_action_meta(^^int), ^^void));
+}
+
+TEST_CASE("detail::io_value_meta reflects an IO's action's result")
+{
+    using fnfelt::monad::io::CreateIOTraits;
+    using fnfelt::monad::io::IO;
+    using fnfelt::monad::io::detail::io_value_meta;
+
+    using CustomIOTraits = CreateIOTraits<custom_io_name>;
+
+    static_assert(is_same_type(io_value_meta(^^IO<int (*)()>), ^^int));
+    static_assert(is_same_type(io_value_meta(^^IO<int (*)(), CustomIOTraits>), ^^int));
+    // Non-IO types have no value.
+    static_assert(is_same_type(io_value_meta(^^int), ^^void));
+}
+
 TEST_CASE("detail::is_directly_invocable checks single-argument rvalue invocability")
 {
     using fnfelt::monad::io::detail::is_directly_invocable;

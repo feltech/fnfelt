@@ -3,4 +3,5 @@
 # Copyright 2026 David Feltell
 
 add_subdirectory(IO)
+add_subdirectory(and_then)
 add_subdirectory(just)
