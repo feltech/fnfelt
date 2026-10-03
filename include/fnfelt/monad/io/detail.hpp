@@ -5,16 +5,13 @@
 /**
  * @file detail.hpp
  *
- * Implementation details for the IO monad.
+ * Generic implementation details for the IO monad.
  *
- * Reflection helper predicates and the bind action used by IO::bind.
+ * Reflection helper predicates shared by the IO monad's operations.
  */
 #pragma once
 
 #include <meta>
-
-#include <tuple>
-#include <utility>
 
 #include <fnfelt/monad/io/fwd.hpp>
 
@@ -70,6 +67,37 @@ consteval std::meta::info action_value_meta(std::meta::info action_meta)
         return invoke_result(action_meta, {});
     }
     return ^^void;
+}
+
+/**
+ * Reflection of the action type wrapped by an IO.
+ *
+ * @param io_meta Reflection of the (possibly IO) type.
+ * @return Reflection of the wrapped action, or `void` if the type is not an IO.
+ */
+consteval std::meta::info io_action_meta(std::meta::info io_meta)
+{
+    // `template_arguments_of` throws for non-template types, and a consteval throw is a hard
+    // compile error, so `void` is returned as a placeholder for non-IO types.
+    if (!is_io(io_meta))
+    {
+        return ^^void;
+    }
+    // Extract the scalar inside the consteval function: vector<info> results allocate and cannot
+    // escape a constant-evaluated context.
+    return template_arguments_of(dealias(remove_cvref(io_meta)))[0];
+}
+
+/**
+ * Reflection of the value an IO's action produces when run.
+ *
+ * @param io_meta Reflection of the (possibly IO) type.
+ * @return Reflection of the wrapped action's invocation result, or `void` if the type is not an IO
+ * or its action produces no value.
+ */
+consteval std::meta::info io_value_meta(std::meta::info io_meta)
+{
+    return action_value_meta(io_action_meta(io_meta));
 }
 
 /**

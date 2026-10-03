@@ -10,17 +10,20 @@
 #pragma once
 #include <meta>
 
+#include <string_view>
 #include <type_traits>
 #include <utility>
 
 #include <fnfelt/detail/errors.hpp>
 #include <fnfelt/monad/io/detail.hpp>
+#include <fnfelt/monad/io/fwd.hpp>
 #include <fnfelt/monad/io/traits.hpp>
 
 #include <fnfelt/macros_push.hpp>
 
 namespace fnfelt::monad::io
 {
+
 /**
  * IO monad for wrapping side-effecting actions.
  *
@@ -37,6 +40,8 @@ public:
     using traits = TTraits;
     /// Type alias for the value the action produces when run.
     using value_type = [:detail::action_value_meta(^^TAction):];
+    /// Name of this IO (defaults to "IO").
+    static constexpr std::string_view name = traits::name;
 
     /// Validation
     consteval
@@ -64,6 +69,55 @@ public:
     constexpr auto operator()(this auto && self)
     {
         return FW(self).action_();
+    }
+
+    /**
+     * Chain a continuation to this IO, producing an IO of the continuation's value.
+     *
+     * The continuation takes the value this IO produces and returns an IO; the returned IO runs
+     * this one, applies the continuation, then runs its IO. Values that are specialisations with
+     * all-type template arguments (e.g. `std::pair`, `std::tuple`) are spread into the continuation
+     * unless it accepts the value directly.
+     *
+     * The continuation is taken by value and moved into the free `and_then` as an rvalue: lvalues
+     * are copied into the parameter, and the caller's lvalue is left untouched. It must be a
+     * complete, non-reference, move constructible class or function pointer type, callable as a
+     * const lvalue with the value (directly or spread), and must return an IO. It is validated by
+     * the traits template argument's `validate_and_then` (default `IOTraits<>`), which may be
+     * overridden by passing custom traits explicitly. The result IO also takes those traits; this
+     * IO's own traits are not inherited. An invalid continuation is rejected by a friendly
+     * static_assert and yields `detail::AndThenError`.
+     *
+     * @tparam TAndThenTraits Traits used to validate this IO and continuation pair, and for the
+     * result IO, defaulting to IOTraits.
+     * @param self The IO instance to chain to (explicit object parameter).
+     * @param continuation Continuation taking the value and returning an IO.
+     * @return IO running this IO followed by the continuation's IO, or detail::AndThenError if the
+     * continuation is invalid (which is also rejected by a friendly static_assert).
+     */
+    template <class TAndThenTraits = IOTraits<>, class TContinuation>
+    [[nodiscard]] constexpr auto and_then(this auto && self, TContinuation continuation)
+    {
+        return io::and_then<TAndThenTraits>(FW(self), FW(continuation));
+    }
+
+    /**
+     * Chain a continuation to this IO, naming the result.
+     *
+     * See the defaulted-traits member overload for the full contract, which is identical: the
+     * result IO takes `IOTraits<name_cstr>`, which is also used to validate this IO and the
+     * continuation pair.
+     *
+     * @param self The IO instance to chain to (explicit object parameter).
+     * @param continuation Continuation taking the value and returning an IO.
+     * @return IO running this IO followed by the continuation's IO with IOTraits<name_cstr>, or
+     * detail::AndThenError if the continuation is invalid (which is also rejected by a friendly
+     * static_assert).
+     */
+    template <char const * name_cstr, class TContinuation>
+    [[nodiscard]] constexpr auto and_then(this auto && self, TContinuation continuation)
+    {
+        return io::and_then<name_cstr>(FW(self), FW(continuation));
     }
 
 private:

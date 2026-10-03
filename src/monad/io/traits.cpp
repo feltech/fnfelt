@@ -75,6 +75,26 @@ struct ReturnsReference
     }
 };
 
+/// Continuation accepting a source value directly - passes validation.
+struct ValidContinuation
+{
+    auto operator()(int) const
+    {
+        return fnfelt::monad::io::IO{[] { return 1; }};
+    }
+};
+
+/// Continuation that is not move constructible - must fail validation.
+struct NonMovableContinuation  // NOLINT(*-special-member-functions)
+{
+    NonMovableContinuation() = default;
+    NonMovableContinuation(NonMovableContinuation &&) = delete;
+    auto operator()(int) const
+    {
+        return fnfelt::monad::io::IO{[] { return 1; }};
+    }
+};
+
 /// Inner IO as an action - must fail validation.
 // NOLINTNEXTLINE(*-statically-constructed-objects)
 constexpr auto inner_io_action = [] { return fnfelt::monad::io::IO{[] { return false; }}; };
@@ -192,6 +212,86 @@ TEST_CASE("IOTraits::is_io delegates to the detail::is_io free helper")
     static_assert(fnfelt::monad::io::detail::is_io(^^IO<int (*)()>));
     static_assert(!IOTraits::is_io(^^int));
     static_assert(!fnfelt::monad::io::detail::is_io(^^int));
+}
+
+TEST_CASE("IOTraits::validate_and_then accepts direct and spread continuation types")
+{
+    using fnfelt::monad::io::IO;
+    using IOTraits = fnfelt::monad::io::IOTraits<>;
+
+    // Direct: the continuation takes the value as a single argument.
+    static_assert(IOTraits::validate_and_then(
+                      ^^IO<int (*)()>, ^^decltype([](int) { return IO{[] { return 1; }}; }))
+                      .empty());
+    // Spread over pair.
+    static_assert(IOTraits::validate_and_then(
+                      ^^IO<std::pair<int, int> (*)()>,
+                      ^^decltype([](int, int) { return IO{[] { return 1; }}; }))
+                      .empty());
+    // Spread over tuple.
+    static_assert(IOTraits::validate_and_then(
+                      ^^IO<std::tuple<int, int> (*)()>,
+                      ^^decltype([](int, int) { return IO{[] { return 1; }}; }))
+                      .empty());
+    // Callable struct and function pointer continuation.
+    static_assert(IOTraits::validate_and_then(^^IO<int (*)()>, ^^ValidContinuation).empty());
+    static_assert(IOTraits::validate_and_then(^^IO<int (*)()>, ^^IO<int (*)()> (*)(int)).empty());
+    // Source IO with custom traits is still accepted.
+    static_assert(
+        IOTraits::validate_and_then(^^IO<int (*)(), CustomIOTraits>, ^^ValidContinuation).empty());
+}
+
+TEST_CASE("IOTraits::validate_and_then rejects non-IO sources with the exact reason")
+{
+    using fnfelt::monad::io::IO;
+    using IOTraits = fnfelt::monad::io::IOTraits<>;
+
+    static_assert(
+        IOTraits::validate_and_then(^^int, ^^ValidContinuation) == "source IO is not an IO");
+}
+
+TEST_CASE("IOTraits::validate_and_then rejects continuation types with the exact reason")
+{
+    using fnfelt::monad::io::IO;
+    using IOTraits = fnfelt::monad::io::IOTraits<>;
+
+    // Void source value: an IO whose action produces no value cannot feed a continuation. The
+    // reflection does not instantiate the IO's class-scope action validation.
+    static_assert(
+        IOTraits::validate_and_then(^^IO<void (*)()>, ^^decltype([](int) { return 1; })) ==
+        "source IO produces no value");
+    // Incomplete continuation.
+    static_assert(
+        IOTraits::validate_and_then(^^IO<int (*)()>, ^^Incomplete) ==
+        "continuation function is not a complete type");
+    // Reference continuation.
+    static_assert(
+        IOTraits::validate_and_then(^^IO<int (*)()>, ^^decltype([](int) { return 1; }) &) ==
+        "continuation function must not be a reference type");
+    // Non-class, non-function-pointer continuation.
+    static_assert(
+        IOTraits::validate_and_then(^^IO<int (*)()>, ^^int) ==
+        "continuation function is not a class or function pointer type");
+    // Non-move-constructible continuation.
+    static_assert(
+        IOTraits::validate_and_then(^^IO<int (*)()>, ^^NonMovableContinuation) ==
+        "continuation function must be move constructible");
+    // Does not accept the source IO's value.
+    static_assert(
+        IOTraits::validate_and_then(^^IO<int (*)()>, ^^decltype([](std::string) { return 1; })) ==
+        "continuation function does not accept the source IO's value");
+    static_assert(
+        IOTraits::validate_and_then(^^IO<int (*)()>, ^^decltype([](int, int) { return 1; })) ==
+        "continuation function does not accept the source IO's value");
+    // Callable but returns a non-IO.
+    static_assert(
+        IOTraits::validate_and_then(^^IO<int (*)()>, ^^decltype([](int) { return 1; })) ==
+        "continuation function must return an IO");
+    // Spread-callable but returns a non-IO.
+    static_assert(
+        IOTraits::validate_and_then(
+            ^^IO<std::pair<int, int> (*)()>, ^^decltype([](int, int) { return 1; })) ==
+        "continuation function must return an IO");
 }
 
 // NOLINTEND(*-magic-numbers)

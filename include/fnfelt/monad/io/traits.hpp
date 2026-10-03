@@ -100,5 +100,73 @@ struct IOTraits
         }
         return {};
     }
+
+    /**
+     * Validate the source IO and continuation function provided to @ref and_then.
+     *
+     * Checks, in order: the source is an IO producing a value (not void); the continuation function
+     * is a complete, non-reference, move constructible class or function pointer type; it accepts
+     * the source IO's value either directly or spread from its template arguments; and its result
+     * is an IO.
+     *
+     * This is the overridable default implementation used by `io::and_then`: custom traits may
+     * replace it to change which source IO and continuation pairs are accepted.
+     *
+     * @param io_meta Reflection of the source IO type.
+     * @param continuation_meta Reflection of the continuation function type.
+     * @return Empty string if validation passes, otherwise a string describing the error.
+     */
+    static consteval std::string_view validate_and_then(
+        std::meta::info io_meta, std::meta::info continuation_meta)
+    {
+        if (!is_io(io_meta))
+        {
+            return "source IO is not an IO";
+        }
+        auto const value_meta = detail::io_value_meta(io_meta);
+        if (is_void_type(value_meta))
+        {
+            return "source IO produces no value";
+        }
+        if (!is_complete_type(continuation_meta))
+        {
+            return "continuation function is not a complete type";
+        }
+        if (is_reference_type(continuation_meta))
+        {
+            return "continuation function must not be a reference type";
+        }
+        continuation_meta = remove_cvref(continuation_meta);
+        if (!is_class_type(continuation_meta) &&
+            !(is_pointer_type(continuation_meta) &&
+              is_function_type(remove_pointer(continuation_meta))))
+        {
+            return "continuation function is not a class or function pointer type";
+        }
+        if (!is_move_constructible_type(continuation_meta))
+        {
+            return "continuation function must be move constructible";
+        }
+        if (detail::is_directly_invocable(continuation_meta, value_meta))
+        {
+            std::meta::info result_meta = invoke_result(continuation_meta, {value_meta});
+            if (!is_io(result_meta))
+            {
+                return "continuation function must return an IO";
+            }
+            return {};
+        }
+        if (detail::is_spread_invocable(continuation_meta, value_meta))
+        {
+            std::meta::info result_meta =
+                invoke_result(continuation_meta, template_arguments_of(dealias(value_meta)));
+            if (!is_io(result_meta))
+            {
+                return "continuation function must return an IO";
+            }
+            return {};
+        }
+        return "continuation function does not accept the source IO's value";
+    }
 };
 }  // namespace fnfelt::monad::io

@@ -9,7 +9,6 @@
 
 #include <memory>
 #include <type_traits>
-#include <utility>
 
 // Magic numbers are used in tests.
 // Unnamed parameters are used in test stubs.
