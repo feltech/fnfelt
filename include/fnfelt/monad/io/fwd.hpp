@@ -1,6 +1,7 @@
 // fnfelt
 // SPDX-License-Identifier: MIT
 // Copyright 2026 David Feltell
+// IWYU pragma: private, include "../io.hpp"
 /**
  * @file fwd.hpp
  *
