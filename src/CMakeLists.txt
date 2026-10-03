@@ -26,6 +26,7 @@ target_sources(
          ${PROJECT_SOURCE_DIR}/include/fnfelt/detail/errors.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/macros_push.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/macros_pop.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/fwd.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/traits.hpp
