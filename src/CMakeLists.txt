@@ -67,7 +67,10 @@ target_compile_options(${_lib_target} INTERFACE "$<$<CXX_COMPILER_ID:GNU,Clang>:
 # Doctest test suite.
 
 if(${PROJECT_NAME}_ENABLE_DEV)
-  add_executable(${PROJECT_NAME}.main main.cpp)
+  add_executable(
+    ${PROJECT_NAME}.main
+    detail/type_names.cpp
+    main.cpp)
   set(_main_target ${PROJECT_NAME}.main)
   target_link_libraries(${_main_target} PRIVATE doctest::doctest ${PROJECT_NAME}.lib)
   fnfelt_target_linters(${_main_target})
