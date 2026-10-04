@@ -8,8 +8,10 @@
 #include <doctest/doctest.h>
 
 #include <array>
+#include <map>
 #include <memory>
 #include <optional>
+#include <string>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -21,8 +23,24 @@ namespace
 /// Incomplete type - has no meaningful invocation result.
 struct Incomplete;
 
-/// Custom IO name for a custom-traits instantiation.
-inline constexpr char custom_io_name[] = "CustomIO";
+/// Named class for short-name tests - identifier branch works for anonymous-namespace types too.
+struct Named
+{
+};
+
+/// Named scoped enum for short-name tests.
+enum class Color
+{
+    red
+};
+
+/// Named class in a nested namespace for short-name tests.
+namespace probe_ns
+{
+struct Nested
+{
+};
+}  // namespace probe_ns
 
 /// Directly callable only as a const lvalue (its rvalue overload is deleted).
 struct ConstLvalueDirectFn
@@ -96,6 +114,9 @@ template <class TFirst, class TSecond>
 struct TypeOnlyTemplate
 {
 };
+
+/// Custom IO name for a custom-traits instantiation.
+inline constexpr char custom_io_name[] = "CustomIO";
 }  // namespace
 
 TEST_CASE("detail::is_io recognises IO specialisations with any traits")
@@ -174,6 +195,50 @@ TEST_CASE("detail::is_spread_invocable checks rvalue spread invocability")
         !is_spread_invocable(^^decltype([](int, int) { return 1; }), ^^std::array<int, 2>));
     static_assert(
         !is_spread_invocable(^^decltype([](int, int) { return 1; }), ^^TypeOnlyTemplate<int, int>));
+}
+
+TEST_CASE("detail::short_type_name renders a structurally safe short name")
+{
+    using fnfelt::monad::io::detail::short_type_name;
+
+    // Named class and enum types show their identifier; nested and anonymous-namespace types too.
+    static_assert(short_type_name(^^Named) == "Named");
+    static_assert(short_type_name(^^probe_ns::Nested) == "Nested");
+    static_assert(short_type_name(^^Color) == "Color");
+
+    // Template specialisations show only the outer template's name, so nested arguments don't leak.
+    static_assert(short_type_name(^^std::vector<int>) == "vector");
+    // clang-format off
+    static_assert(short_type_name(^^std::map<int, std::vector<int> >) == "map");
+    // clang-format on
+
+    // Aliases win over the aliased type.
+    static_assert(short_type_name(^^std::string) == "string");
+    // A cv-ref-qualified alias resolves to its underlying type, dropping the alias name.
+    static_assert(short_type_name(^^std::string const &) == "basic_string");
+
+    // Anonymous class types are closures.
+    static_assert(short_type_name(^^decltype([] { return 1; })) == "lambda");
+
+    // Fundamentals show canonical spellings, not compiler display strings (e.g. gcc's
+    // "long long int").
+    static_assert(short_type_name(^^int) == "int");
+    static_assert(short_type_name(^^void) == "void");
+    // NOLINTNEXTLINE(runtime/int) - canonical spelling check needs the fundamental C keyword.
+    static_assert(short_type_name(^^long long) == "long long");
+    static_assert(short_type_name(^^std::nullptr_t) == "nullptr_t");
+    static_assert(short_type_name(^^float) == "float");
+
+    // Pointers, function pointers and arrays have no identifier and fall back to "value".
+    static_assert(short_type_name(^^int *) == "value");
+    static_assert(short_type_name(^^int (*)()) == "value");
+    static_assert(short_type_name(^^int[3]) == "value");
+
+    // Cv-ref qualifiers are dropped: the *name* of the type is requested, not its signature.
+    static_assert(short_type_name(^^int &) == "int");
+    static_assert(short_type_name(^^int const) == "int");
+    // A cv-qualified named class still hits the identifier branch.
+    static_assert(short_type_name(^^Named const) == "Named");
 }
 
 #endif  // DOCTEST_CONFIG_DISABLE
