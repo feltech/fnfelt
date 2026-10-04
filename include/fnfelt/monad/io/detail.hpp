@@ -13,6 +13,9 @@
 
 #include <meta>
 
+#include <array>
+#include <string_view>
+
 #include <fnfelt/monad/io/fwd.hpp>
 
 namespace fnfelt::monad::io
@@ -127,6 +130,100 @@ consteval bool is_spread_invocable(std::meta::info receiver_meta, std::meta::inf
     return has_template_arguments(value_meta) && all_template_arguments_are_types(value_meta) &&
         is_invocable_type(
                add_lvalue_reference(add_const(receiver_meta)), template_arguments_of(value_meta));
+}
+
+/**
+ * Canonical name of a fundamental type.
+ *
+ * Fundamental types have no identifier and their display strings are compiler-specific.
+ *
+ * @param type_meta Reflection of the (cv-ref-stripped) type.
+ * @return Canonical name (e.g. "long long"), or "value" if not a fundamental type.
+ */
+consteval std::string_view fundamental_type_name(std::meta::info type_meta)
+{
+    struct Entry
+    {
+        std::meta::info meta;
+        std::string_view name;
+    };
+    // Fundamental types have no identifier and their display strings are compiler-specific, so they
+    // are matched against this closed table with fixed spellings.
+    // Canonical spellings require the fundamental C keywords, which cpplint would otherwise flag.
+    // NOLINTBEGIN(runtime/int)
+    constexpr std::array candidates{
+        Entry{^^void, "void"},
+        Entry{^^bool, "bool"},
+        Entry{^^char, "char"},
+        Entry{^^signed char, "signed char"},
+        Entry{^^unsigned char, "unsigned char"},
+        Entry{^^wchar_t, "wchar_t"},
+        Entry{^^char8_t, "char8_t"},
+        Entry{^^char16_t, "char16_t"},
+        Entry{^^char32_t, "char32_t"},
+        Entry{^^short, "short"},
+        Entry{^^unsigned short, "unsigned short"},
+        Entry{^^int, "int"},
+        Entry{^^unsigned int, "unsigned int"},
+        Entry{^^long, "long"},
+        Entry{^^unsigned long, "unsigned long"},
+        Entry{^^long long, "long long"},
+        Entry{^^unsigned long long, "unsigned long long"},
+        Entry{^^float, "float"},
+        Entry{^^double, "double"},
+        Entry{^^long double, "long double"},
+        Entry{^^decltype(nullptr), "nullptr_t"},
+    };
+    // NOLINTEND(runtime/int)
+    for (Entry const & candidate : candidates)
+    {
+        if (is_same_type(candidate.meta, type_meta))
+        {
+            return candidate.name;
+        }
+    }
+    return "value";
+}
+
+/**
+ * Short name of a type for use in diagnostic messages.
+ *
+ * Never inspects string contents: names come from identifiers (single tokens by the grammar) or
+ * fixed literals, so the result can never contain brackets or nested type structure. Template
+ * specialisations show only their outer template's name; anonymous class types (i.e. closures)
+ * show "lambda"; fundamentals show canonical spellings; everything else shows "value". Aliases
+ * win over the aliased type (e.g. std::string shows "string"), but a cv-ref-qualified alias
+ * resolves to its underlying type when the qualifier is dropped (e.g. const std::string& shows
+ * "basic_string").
+ *
+ * @param type_meta Reflection of the type to name.
+ * @return A short, structurally safe name for the type.
+ */
+consteval std::string_view short_type_name(std::meta::info type_meta)
+{
+    if (!is_type(type_meta))
+    {
+        return "value";
+    }
+    if (is_type_alias(type_meta) && has_identifier(type_meta))
+    {
+        return identifier_of(type_meta);
+    }
+    type_meta = remove_cvref(type_meta);
+    type_meta = dealias(type_meta);
+    if (has_identifier(type_meta))
+    {
+        return identifier_of(type_meta);
+    }
+    if (has_template_arguments(type_meta) && has_identifier(template_of(type_meta)))
+    {
+        return identifier_of(template_of(type_meta));
+    }
+    if (is_class_type(type_meta))
+    {
+        return "lambda";
+    }
+    return fundamental_type_name(type_meta);
 }
 }  // namespace detail
 }  // namespace fnfelt::monad::io
