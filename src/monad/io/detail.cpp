@@ -40,6 +40,26 @@ struct Nested
 };
 }  // namespace probe_ns
 
+/// Spread-callable only as a const lvalue (its rvalue overload is deleted).
+struct ConstLvalueSpreadFn
+{
+    int operator()(int, int) const &
+    {
+        return 1;
+    }
+
+    int operator()(int, int) && = delete;
+};
+
+/// Spread-callable only as an rvalue.
+struct RvalueSpreadFn
+{
+    int operator()(int, int) &&
+    {
+        return 1;
+    }
+};
+
 /// Custom IO name for a custom-traits instantiation.
 inline constexpr char custom_io_name[] = "CustomIO";
 }  // namespace
@@ -130,6 +150,26 @@ TEST_CASE("detail::is_spread_invocable checks template-argument-spread invocabil
     // A direct-only continuation is not spread invocable.
     static_assert(
         !is_spread_invocable(^^decltype([](std::pair<int, int>) {}), ^^std::pair<int, int>));
+}
+
+TEST_CASE("detail::is_spread_invocable_as checks prvalue-spread invocability")
+{
+    using fnfelt::monad::io::detail::is_spread_invocable;
+    using fnfelt::monad::io::detail::is_spread_invocable_as;
+
+    // Spread: the callable takes the value's template arguments as its parameter pack.
+    static_assert(
+        is_spread_invocable_as(^^decltype([](int, int) { return 1; }), ^^std::pair<int, int>));
+    static_assert(
+        is_spread_invocable_as(^^decltype([](int, int) { return 1; }), ^^std::tuple<int, int>));
+    // A callable only invocable as a const lvalue.
+    static_assert(is_spread_invocable(^^ConstLvalueSpreadFn, ^^std::pair<int, int>));
+    static_assert(!is_spread_invocable_as(^^ConstLvalueSpreadFn, ^^std::pair<int, int>));
+    // A callable only invocable as an rvalue is accepted as a prvalue but not by a const& receiver.
+    static_assert(is_spread_invocable_as(^^RvalueSpreadFn, ^^std::pair<int, int>));
+    static_assert(!is_spread_invocable(^^RvalueSpreadFn, ^^std::pair<int, int>));
+    // A non-spreadable value has no template arguments to spread.
+    static_assert(!is_spread_invocable_as(^^decltype([](int, int) { return 1; }), ^^int));
 }
 
 TEST_CASE("detail::short_type_name renders a structurally safe short name")

@@ -117,6 +117,31 @@ consteval bool is_directly_invocable(std::meta::info receiver_meta, std::meta::i
 }
 
 /**
+ * Check whether a callable, invoked as the given receiver type, is invocable with a value's
+ * template arguments spread as its parameter pack.
+ *
+ * Values that are specialisations with all-type template arguments (e.g. `std::pair<int, int>`,
+ * `std::tuple<int, int>`) have their arguments spread into the invocation.
+ *
+ * @note Spreading follows the value's template arguments, so non-tuple specialisations whose
+ * template arguments are all types (e.g. `std::vector<int>` spreads as `int,
+ * std::allocator<int>`) are also treated as spread-callable; `std::apply` will only accept
+ * genuinely tuple-like values at run time.
+ *
+ * @param receiver_meta Reflection of the receiver the callable is invoked as (e.g. a const lvalue
+ * for a stored member, or the bare type for a moved local).
+ * @param value_meta Reflection of the value type produced by the source IO.
+ * @return True if the callable accepts the value's template arguments as its parameter pack.
+ */
+consteval bool is_spread_invocable_as(std::meta::info receiver_meta, std::meta::info value_meta)
+{
+    // Alias reflections report `has_template_arguments` false, so dealias first.
+    value_meta = dealias(value_meta);
+    return has_template_arguments(value_meta) && all_template_arguments_are_types(value_meta) &&
+        is_invocable_type(receiver_meta, template_arguments_of(value_meta));
+}
+
+/**
  * Check whether a callable is invocable with a spread value (std::apply) when the callable is
  * invoked as a const lvalue.
  *
@@ -126,10 +151,7 @@ consteval bool is_directly_invocable(std::meta::info receiver_meta, std::meta::i
  */
 consteval bool is_spread_invocable(std::meta::info receiver_meta, std::meta::info value_meta)
 {
-    value_meta = dealias(value_meta);
-    return has_template_arguments(value_meta) && all_template_arguments_are_types(value_meta) &&
-        is_invocable_type(
-               add_lvalue_reference(add_const(receiver_meta)), template_arguments_of(value_meta));
+    return is_spread_invocable_as(add_lvalue_reference(add_const(receiver_meta)), value_meta);
 }
 
 /**
