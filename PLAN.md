@@ -359,10 +359,10 @@ Each a separate green commit. `FILE_SET`/umbrella updated in the stage that crea
   `io().sync_wait()`; detection-only mock-proxy tests (incl. a void-`value_type` variant) and a
   copy-counting doctest; update `IO.hpp`'s doc comment. `consteval` tests still pass as `constexpr`;
   async branch stubbed.
-- **C — async leaves + and_then**: `create_async`; statelessness enforcement + compile-fails
-  (stateful `fn`, missing `value_type` alias) HERE; async leaf proxies (arg tuple, no stored `fn`);
-  async/mixed `AndThenAction`; mixed-chain and sync-over-async / async-over-sync tests;
-  `std::unique_ptr<int>` through an and_then with a not-copy-constructible `static_assert`; a
+- **C — async leaves + and_then — COMPLETE**: `create_async`; statelessness enforcement +
+  compile-fails (stateful `fn`, missing `value_type` alias) HERE; async leaf proxies (arg tuple, no
+  stored `fn`); async/mixed `AndThenAction`; mixed-chain and sync-over-async / async-over-sync
+  tests; `std::unique_ptr<int>` through an and_then with a not-copy-constructible `static_assert`; a
   `std::pair<int,int>` spread-on-async test; ASan/UBSan via `-Dfnfelt_ENABLE_SANITIZER_ASAN=ON`.
 - **D — concurrent ap**: async `ApAction` via fork both sides + join; tests for mixed
   async-fn×sync-value / sync-fn×async-value (likeliest bug spot); `lf::lazy_pool{2}` + atomic

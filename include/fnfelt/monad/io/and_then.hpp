@@ -44,43 +44,64 @@ struct AndThenError
 };
 
 /**
- * Reflection of the value an AndThenAction produces when run.
+ * Whether an and_then composition must run asynchronously.
  *
- * The continuation is applied with the source's value directly when possible, otherwise the value
- * is spread into it (direct invocation wins over spreading), mirroring the action's dispatch. The
- * invocation result is the continuation's IO, whose own value (async-transparent) is the final
- * value.
- *
- * Used as the action's declared return type so that validating the action never instantiates its
- * body, which would otherwise require copying a move-only nested action for the const receiver.
+ * The composition is asynchronous when either the source action or the continuation's returned IO's
+ * action is asynchronous. The result type and the action's run-time dispatch both derive from this
+ * predicate, keeping them in sync.
  *
  * @tparam TSourceIO Source IO to run.
  * @tparam TContinuation Continuation taking the source's value and returning an IO.
- * @return Reflection of the value the action produces.
+ * @return True if the composition runs asynchronously.
  */
 template <class TSourceIO, class TContinuation>
-consteval std::meta::info and_then_result_meta()
+consteval bool and_then_is_async()
 {
-    constexpr std::meta::info value_meta = io_value_meta(^^TSourceIO);
-    if constexpr (is_directly_invocable(^^TContinuation, value_meta))
+    constexpr std::meta::info source_action_meta = io_action_meta(^^TSourceIO);
+    if constexpr (action_is_async(source_action_meta))
     {
-        return io_value_meta(invoke_result(^^TContinuation, {value_meta}));
+        return true;
     }
-    if constexpr (is_spread_invocable(^^TContinuation, value_meta))
+    constexpr std::meta::info continuation_io_meta =
+        and_then_continuation_io_meta<TSourceIO, TContinuation>();
+    if constexpr (is_io(continuation_io_meta))
     {
-        return io_value_meta(
-            invoke_result(^^TContinuation, template_arguments_of(dealias(value_meta))));
+        return action_is_async(io_action_meta(continuation_io_meta));
     }
-    return ^^void;
+    return false;
+}
+
+/**
+ * Reflection of the value an AndThenAction's declared return type names.
+ *
+ * Synchronous compositions produce a plain value; asynchronous ones produce the composed async
+ * proxy.
+ *
+ * @tparam TSourceIO Source IO to run.
+ * @tparam TContinuation Continuation taking the source's value and returning an IO.
+ * @return Reflection of the action's declared return type.
+ */
+template <class TSourceIO, class TContinuation>
+consteval std::meta::info and_then_result_type_meta()
+{
+    if constexpr (and_then_is_async<TSourceIO, TContinuation>())
+    {
+        return ^^AndThenProxy<TSourceIO, TContinuation>;
+    }
+    return and_then_result_meta<TSourceIO, TContinuation>();
 }
 
 /**
  * Action that runs a source IO and feeds its value to a continuation.
  *
+ * Synchronous compositions run the source and continuation inline and produce a plain value;
+ * asynchronous or mixed compositions instead materialise the composed async proxy so that the whole
+ * tree runs under a single top-level scheduler.
+ *
  * The continuation is invoked with the value directly when possible, otherwise the value is spread
- * into the continuation as if by `std::apply` (direct invocation wins over spreading). The
- * action's value category is forwarded to the source and continuation, so running an rvalue moves
- * captures. The continuation must still be callable as a const lvalue.
+ * into the continuation as if by `std::apply` (direct invocation wins over spreading). The action's
+ * value category is forwarded to the source and continuation, so running an rvalue moves captures.
+ * The continuation must still be callable as a const lvalue.
  *
  * @tparam TSourceIO Source IO to run.
  * @tparam TContinuation Continuation taking the source's value and returning an IO.
@@ -88,8 +109,8 @@ consteval std::meta::info and_then_result_meta()
 template <class TSourceIO, class TContinuation>
 struct AndThenAction
 {
-    /// Value the action produces when run.
-    using result_type = [:and_then_result_meta<TSourceIO, TContinuation>():];
+    /// Value the action produces when run (async proxy or plain value).
+    using result_type = [:and_then_result_type_meta<TSourceIO, TContinuation>():];
     /// Source IO to run.
     TSourceIO source;
     /// Continuation applied to the source's value.
@@ -100,21 +121,29 @@ struct AndThenAction
      *
      * @param self The action to run (explicit object parameter).
      *
-     * @return The final value.
+     * @return The composed async proxy, or the final value on the synchronous path.
      */
     constexpr auto operator()(this auto && self) -> result_type
     {
-        using source_value_type = TSourceIO::value_type;
-        auto input = FW(self).source().sync_wait();
-        if constexpr (is_directly_invocable(^^TContinuation, ^^source_value_type))
+        if constexpr (and_then_is_async<TSourceIO, TContinuation>())
         {
-            auto next = FW(self).continuation(std::move(input));
-            return std::move(next)().sync_wait();
+            return result_type{
+                std::tuple<TSourceIO, TContinuation>{FW(self).source, FW(self).continuation}};
         }
-        if constexpr (is_spread_invocable(^^TContinuation, ^^source_value_type))
+        if constexpr (!and_then_is_async<TSourceIO, TContinuation>())
         {
-            auto next = std::apply(FW(self).continuation, std::move(input));
-            return std::move(next)().sync_wait();
+            using source_value_type = TSourceIO::value_type;
+            auto input = FW(self).source().sync_wait();
+            if constexpr (is_directly_invocable(^^TContinuation, ^^source_value_type))
+            {
+                auto next = FW(self).continuation(std::move(input));
+                return std::move(next)().sync_wait();
+            }
+            if constexpr (is_spread_invocable(^^TContinuation, ^^source_value_type))
+            {
+                auto next = std::apply(FW(self).continuation, std::move(input));
+                return std::move(next)().sync_wait();
+            }
         }
     }
 };
@@ -168,17 +197,18 @@ consteval std::string and_then_error_msg(std::string_view io_name, std::string_v
     std::string msg;
     msg += "fnfelt: ";
     msg += "IO and_then error: ";
-    msg += io_name;
+    fnfelt::detail::append_string_view(msg, io_name);
     msg += "{(";
-    msg += maybe_io_name<source_io_meta>();
+    fnfelt::detail::append_string_view(msg, maybe_io_name<source_io_meta>());
     msg += "()) => ";
-    msg += maybe_continuation_result_io_name<source_io_meta, continuation_meta>();
+    fnfelt::detail::append_string_view(
+        msg, maybe_continuation_result_io_name<source_io_meta, continuation_meta>());
     msg += "}: ";
-    msg += reason;
+    fnfelt::detail::append_string_view(msg, reason);
     msg += ": ";
     std::meta::info const target_meta =
         !detail::is_io(source_io_meta) ? source_io_meta : continuation_meta;
-    msg += display_string_of(target_meta);
+    fnfelt::detail::append_string_view(msg, display_string_of(target_meta));
 
     return msg;
 }

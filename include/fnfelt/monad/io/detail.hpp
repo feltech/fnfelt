@@ -54,6 +54,33 @@ consteval bool all_template_arguments_are_types(std::meta::info target_meta)
 }
 
 /**
+ * Check whether a reflection is of an empty class type.
+ *
+ * A stateless object holds no state: it has no non-static data members in itself or in any base.
+ * Virtual functions and virtual bases also count as state for this check. This is how a stateless
+ * callable (e.g. a non-capturing lambda) is recognised.
+ *
+ * @param type_meta Reflection of the type to check.
+ * @return True if the type is a complete, non-polymorphic class type with no non-static data
+ * members anywhere.
+ */
+consteval bool is_empty_object(std::meta::info type_meta)
+{
+    // Member queries do not see through cv-ref qualifiers, so strip them first.
+    type_meta = dealias(remove_cvref(type_meta));
+    // `is_complete_type` returns false (rather than throwing) for non-type reflections, so it
+    // guards the `is_class_type` category query.
+    if (!is_complete_type(type_meta) || !is_class_type(type_meta))
+    {
+        return false;
+    }
+    // `is_empty_type` reports no non-static data members, bases included. The obvious
+    // `nonstatic_data_members_of` walk does NOT work for closures on gcc 16.2: it reports zero
+    // members for a capturing lambda, so a stateful async function would slip through.
+    return is_empty_type(type_meta);
+}
+
+/**
  * Check whether an action is asynchronous, i.e. its invocation result derives from
  * @c AsyncProxyTag.
  *
@@ -247,6 +274,47 @@ consteval bool is_spread_invocable_as(std::meta::info receiver_meta, std::meta::
 consteval bool is_spread_invocable(std::meta::info receiver_meta, std::meta::info value_meta)
 {
     return is_spread_invocable_as(add_lvalue_reference(add_const(receiver_meta)), value_meta);
+}
+
+/**
+ * Reflection of the IO returned by a source IO's continuation.
+ *
+ * The continuation is applied with the source IO's value directly when possible, otherwise the
+ * value is spread into it (direct invocation wins over spreading), mirroring the run-time dispatch.
+ *
+ * @tparam TSourceIO Source IO to run.
+ * @tparam TContinuation Continuation taking the source's value and returning an IO.
+ * @return Reflection of the continuation's IO, or `void` if not determinable.
+ */
+template <class TSourceIO, class TContinuation>
+consteval std::meta::info and_then_continuation_io_meta()
+{
+    constexpr std::meta::info value_meta = io_value_meta(^^TSourceIO);
+    if constexpr (is_directly_invocable(^^TContinuation, value_meta))
+    {
+        return invoke_result(^^TContinuation, {value_meta});
+    }
+    if constexpr (is_spread_invocable(^^TContinuation, value_meta))
+    {
+        return invoke_result(^^TContinuation, template_arguments_of(dealias(value_meta)));
+    }
+    return ^^void;
+}
+
+/**
+ * Reflection of the value an and_then action produces when run.
+ *
+ * The invocation result is the continuation's IO, whose own value (async-transparent) is the final
+ * value.
+ *
+ * @tparam TSourceIO Source IO to run.
+ * @tparam TContinuation Continuation taking the source's value and returning an IO.
+ * @return Reflection of the value the action produces.
+ */
+template <class TSourceIO, class TContinuation>
+consteval std::meta::info and_then_result_meta()
+{
+    return io_value_meta(and_then_continuation_io_meta<TSourceIO, TContinuation>());
 }
 
 /**

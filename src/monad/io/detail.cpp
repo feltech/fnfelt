@@ -126,6 +126,32 @@ struct IncompleteReturningAction
     IncompleteProxy operator()() const;
 };
 
+/// Empty class with no data members.
+struct EmptyObject
+{
+};
+
+/// Empty base for the inheritance walk.
+struct EmptyBase
+{
+};
+
+/// Class with a non-static data member.
+struct NonEmptyObject
+{
+    int value = 0;
+};
+
+/// Derived class whose only state comes from its base.
+struct DerivedFromNonEmpty : NonEmptyObject
+{
+};
+
+/// Derived class whose base is empty.
+struct DerivedFromEmpty : EmptyBase
+{
+};
+
 /// Custom IO name for a custom-traits instantiation.
 inline constexpr char custom_io_name[] = "CustomIO";
 }  // namespace
@@ -339,6 +365,34 @@ TEST_CASE("detail::async_proxy_has_value and value_meta walk bases for the value
     static_assert(is_same_type(async_proxy_value_meta(^^InheritedProxy), ^^double));
     static_assert(is_same_type(async_proxy_value_meta(^^VoidValueProxy), ^^void));
     static_assert(is_same_type(async_proxy_value_meta(^^MissingValueProxy), ^^void));
+}
+
+TEST_CASE("detail::is_empty_object recognises stateless types")
+{
+    using fnfelt::monad::io::detail::is_empty_object;
+
+    static_assert(is_empty_object(^^EmptyObject));
+    static_assert(is_empty_object(^^DerivedFromEmpty));
+    static_assert(!is_empty_object(^^NonEmptyObject));
+    // State inherited from a base still counts.
+    static_assert(!is_empty_object(^^DerivedFromNonEmpty));
+    // Non-class and incomplete types have no state to speak of, but are not empty objects.
+    static_assert(!is_empty_object(^^int));
+    static_assert(!is_empty_object(^^void));
+    static_assert(!is_empty_object(^^Incomplete));
+    // Non-capturing lambdas are empty closures.
+    static_assert(is_empty_object(^^decltype([](int x) { return x; })));
+    // Stateless coroutine lambdas are the async-function convention.
+    static_assert(is_empty_object(^^decltype([](auto, int x) -> lf::task<int> { co_return x; })));
+}
+
+TEST_CASE("detail::is_empty_object rejects capturing closures")
+{
+    using fnfelt::monad::io::detail::is_empty_object;
+
+    int const captured = 1;
+    auto const capturing = [captured] { return captured; };
+    static_assert(!is_empty_object(^^decltype(capturing)));
 }
 
 #endif  // DOCTEST_CONFIG_DISABLE

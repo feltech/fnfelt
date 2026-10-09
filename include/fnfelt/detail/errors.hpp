@@ -16,6 +16,26 @@
 namespace fnfelt::detail
 {
 /**
+ * Append a view to a string one character at a time.
+ *
+ * Appending one character at a time is constant-evaluable where `operator+=` is not.
+ *
+ * @param target String to append to.
+ * @param view Characters to append.
+ */
+consteval void append_string_view(std::string & target, std::string_view view)
+{
+    // `std::string::operator+=(std::string_view)` compares the view's data pointer against null.
+    // When that data comes from a non-type template parameter string, gcc 16.2 refuses to
+    // constant-evaluate the comparison under `-fsanitize=undefined`; copying the characters
+    // sidesteps it.
+    for (char const character : view)
+    {
+        target.push_back(character);
+    }
+}
+
+/**
  * Builds a readable diagnostic message for a given type.
  *
  * Place type name after error because types can get long and we want to show the error text to
@@ -37,13 +57,13 @@ consteval std::string construct_type_error_msg(
     std::string msg = "fnfelt: ";
     if (!name.empty())
     {
-        msg += name;
+        append_string_view(msg, name);
         msg += ' ';
     }
-    msg += preamble;
-    msg += reason;
+    append_string_view(msg, preamble);
+    append_string_view(msg, reason);
     msg += ": ";
-    msg += display_string_of(target_meta);
+    append_string_view(msg, display_string_of(target_meta));
     return msg;
 }
 }  // namespace fnfelt::detail

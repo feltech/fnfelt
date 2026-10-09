@@ -202,19 +202,19 @@ consteval std::string ap_error_msg(std::string_view ap_io_name, std::string_view
     std::string msg;
     msg += "fnfelt: ";
     msg += "IO ap error: ";
-    msg += ap_io_name;
+    fnfelt::detail::append_string_view(msg, ap_io_name);
     msg += "{(";
-    msg += maybe_io_name<fn_io_meta>();
+    fnfelt::detail::append_string_view(msg, maybe_io_name<fn_io_meta>());
     msg += "()";
     msg += "(";
-    msg += maybe_io_name<value_io_meta>();
+    fnfelt::detail::append_string_view(msg, maybe_io_name<value_io_meta>());
     msg += "()";
     msg += ") => ";
-    msg += maybe_ap_result_name<fn_io_meta, value_io_meta>();
+    fnfelt::detail::append_string_view(msg, maybe_ap_result_name<fn_io_meta, value_io_meta>());
     msg += ")}: ";
-    msg += reason;
+    fnfelt::detail::append_string_view(msg, reason);
     msg += ": ";
-    msg += display_string_of(target_meta);
+    fnfelt::detail::append_string_view(msg, display_string_of(target_meta));
     return msg;
 }
 }  // namespace detail
