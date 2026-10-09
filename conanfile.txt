@@ -2,6 +2,9 @@
 # SPDX-License-Identifier: MIT
 # Copyright 2026 David Feltell
 
+[requires]
+libfork/3.8.0
+
 [test_requires]
 doctest/2.5.3
 
