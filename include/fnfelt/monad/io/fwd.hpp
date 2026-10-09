@@ -8,6 +8,11 @@
  * Forward declarations for the IO monad, including its traits.
  */
 #pragma once
+// Doxygen parses this header before transform.hpp (it sorts first), then merges the two overloads'
+// documentation and warns about duplicate @param sections. The declarations are redundant for
+// documentation (the definitions in transform.hpp are the canonical docs), so hide them from
+// Doxygen.
+/// @cond
 
 #include <meta>
 
@@ -40,4 +45,18 @@ template <class TTraits = IOTraits<>, class TSource, class TContinuation>
 
 template <char const * name_cstr, class TSource, class TContinuation>
 [[nodiscard]] constexpr auto and_then(TSource && source, TContinuation && continuation);
+
+// Forward declarations for the free transform functions used by IO's member transform overloads;
+// defined and documented in transform.hpp. The source IO is taken by forwarding reference so rvalue
+// chains move and lvalues are copied, and the member's `self` may be an lvalue or an rvalue.
+// Invalid pairs (including non-IO sources) are rejected by validation inside the definitions.
+//
+template <class TTraits = IOTraits<>, class TSource, class TTransformer>
+[[nodiscard]] constexpr auto transform(TSource && source, TTransformer && transformer);
+
+template <char const * name_cstr, class TSource, class TTransformer>
+// cpplint mistakes this for std::transform; no <algorithm> is used here.
+// NOLINTNEXTLINE(build/include_what_you_use)
+[[nodiscard]] constexpr auto transform(TSource && source, TTransformer && transformer);
+/// @endcond
 }  // namespace fnfelt::monad::io

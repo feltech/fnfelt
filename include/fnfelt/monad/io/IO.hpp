@@ -120,6 +120,51 @@ public:
         return io::and_then<name_cstr>(FW(self), FW(continuation));
     }
 
+    /**
+     * Transform this IO's value with a transformer, re-wrapping the plain result in an IO.
+     *
+     * The transformer takes the value this IO produces and returns a plain value; the returned IO
+     * runs this one and produces the transformer's value. Values that are specialisations with
+     * all-type template arguments (e.g. `std::pair`, `std::tuple`) are spread into the transformer
+     * unless it accepts the value directly. Unlike `and_then`, the transformer's result is not run
+     * as an IO.
+     *
+     * An invalid transformer is rejected by a friendly static_assert and yields
+     * `detail::TransformError`.
+     *
+     * @tparam TTransformTraits Traits used to validate this IO and transformer pair, and for the
+     * result IO, defaulting to IOTraits.
+     * @param self The IO instance to transform (explicit object parameter).
+     * @param transformer Transformer taking the value and returning a plain value.
+     * @return New IO that encapsulates the value after transformation, or detail::TransformError if
+     * the transformer is invalid (which is also rejected by a friendly static_assert).
+     */
+    template <class TTransformTraits = IOTraits<>, class TTransformer>
+    [[nodiscard]] constexpr auto transform(this auto && self, TTransformer transformer)
+    {
+        return io::transform<TTransformTraits>(FW(self), FW(transformer));
+    }
+
+    /**
+     * Transform this IO's value with a transformer, re-wrapping the plain result in an IO.
+     *
+     * This overload allows the returned IO type to be named, for use in diagnostics.
+     *
+     * See the defaulted-traits member overload for the full contract, which is identical.
+     *
+     * @param self The IO instance to transform (explicit object parameter).
+     * @param transformer Transformer taking the value and returning a plain value.
+     * @return New IO that encapsulates the value after transformation, or detail::TransformError if
+     * the transformer is invalid (which is also rejected by a friendly static_assert).
+     */
+    template <char const * name_cstr, class TTransformer>
+    // cpplint mistakes this for std::transform; no <algorithm> is used here.
+    // NOLINTNEXTLINE(build/include_what_you_use)
+    [[nodiscard]] constexpr auto transform(this auto && self, TTransformer transformer)
+    {
+        return io::transform<name_cstr>(FW(self), FW(transformer));
+    }
+
 private:
     action action_;
 };

@@ -170,6 +170,84 @@ struct IOTraits
     }
 
     /**
+     * Validate the source IO and transformer function provided to @ref transform.
+     *
+     * Checks, in order: the source is an IO producing a value (not void); the transformer function
+     * is a complete, non-reference, move constructible class or function pointer type; it accepts
+     * the source IO's value either directly or spread from its template arguments; and its result
+     * is a valid plain value (not void, not a reference, not an IO, and move constructible).
+     *
+     * This is the overridable default implementation used by `io::transform`: custom traits may
+     * replace it to change which source IO and transformer pairs are accepted.
+     *
+     * @param io_meta Reflection of the source IO type.
+     * @param transformer_meta Reflection of the transformer function type.
+     * @return Empty string if validation passes, otherwise a string describing the error.
+     */
+    static consteval std::string_view validate_transform(
+        std::meta::info io_meta, std::meta::info transformer_meta)
+    {
+        if (!is_io(io_meta))
+        {
+            return "source IO is not an IO";
+        }
+        auto const value_meta = detail::io_value_meta(io_meta);
+        if (is_void_type(value_meta))
+        {
+            return "source IO produces no value";
+        }
+        if (!is_complete_type(transformer_meta))
+        {
+            return "transformer function is not a complete type";
+        }
+        if (is_reference_type(transformer_meta))
+        {
+            return "transformer function must not be a reference type";
+        }
+        transformer_meta = remove_cvref(transformer_meta);
+        if (!is_class_type(transformer_meta) &&
+            !(is_pointer_type(transformer_meta) &&
+              is_function_type(remove_pointer(transformer_meta))))
+        {
+            return "transformer function is not a class or function pointer type";
+        }
+        if (!is_move_constructible_type(transformer_meta))
+        {
+            return "transformer function must be move constructible";
+        }
+        auto const validate_result = [](std::meta::info result_meta) consteval -> std::string_view
+        {
+            if (is_void_type(result_meta))
+            {
+                return "transformer function does not return a value";
+            }
+            if (is_reference_type(result_meta))
+            {
+                return "transformer function returns a reference, return by value instead";
+            }
+            if (is_io(result_meta))
+            {
+                return "transformer function should not return an IO";
+            }
+            if (!is_move_constructible_type(result_meta))
+            {
+                return "transformer function returns a non-movable type";
+            }
+            return {};
+        };
+        if (detail::is_directly_invocable(transformer_meta, value_meta))
+        {
+            return validate_result(invoke_result(transformer_meta, {value_meta}));
+        }
+        if (detail::is_spread_invocable(transformer_meta, value_meta))
+        {
+            return validate_result(
+                invoke_result(transformer_meta, template_arguments_of(dealias(value_meta))));
+        }
+        return "transformer function does not accept the source IO's value";
+    }
+
+    /**
      * Validate the IO-wrapped function and value provided to @ref ap.
      *
      * Checks that both reflections are IO specialisations, and that the IO-wrapped function's

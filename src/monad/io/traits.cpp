@@ -95,6 +95,69 @@ struct NonMovableContinuation  // NOLINT(*-special-member-functions)
     }
 };
 
+/// Transformer accepting a source value directly and returning a plain value - passes validation.
+struct ValidTransformer
+{
+    int operator()(int) const
+    {
+        return 1;
+    }
+};
+
+/// Transformer that is not move constructible - must fail validation.
+struct NonMovableTransformer  // NOLINT(*-special-member-functions)
+{
+    NonMovableTransformer() = default;
+    NonMovableTransformer(NonMovableTransformer &&) = delete;
+    int operator()(int) const
+    {
+        return 1;
+    }
+};
+
+/// Transformer returning a reference - must fail validation.
+struct TransformerReturnsReference
+{
+    int & operator()(int) const
+    {
+        static int value = 0;
+        return value;
+    }
+};
+
+/// Transformer returning an IO - must fail validation.
+struct TransformerReturnsIO
+{
+    auto operator()(int) const
+    {
+        return fnfelt::monad::io::IO{[] { return 1; }};
+    }
+};
+
+/// Transformer returning a non-movable type - must fail validation.
+struct TransformerReturnsNonMovable
+{
+    NonMovable operator()(int) const
+    {
+        return {};
+    }
+};
+
+/// Two-argument transformer returning void when spread - must fail validation.
+struct SpreadTransformerReturnsVoid
+{
+    void operator()(int, int) const {}
+};
+
+/// Two-argument transformer returning an IO when spread - must fail validation.
+struct SpreadTransformerReturnsIO
+{
+    auto operator()(int, int) const
+    {
+        return fnfelt::monad::io::IO{[] { return 1; }};
+    }
+};
+
 /// Inner IO as an action - must fail validation.
 // NOLINTNEXTLINE(*-statically-constructed-objects)
 constexpr auto inner_io_action = [] { return fnfelt::monad::io::IO{[] { return false; }}; };
@@ -311,6 +374,107 @@ TEST_CASE("IOTraits::validate_and_then rejects continuation types with the exact
         IOTraits::validate_and_then(
             ^^IO<std::pair<int, int> (*)()>, ^^decltype([](int, int) { return 1; })) ==
         "continuation function must return an IO");
+}
+
+TEST_CASE("IOTraits::validate_transform accepts direct and spread transformer types")
+{
+    using fnfelt::monad::io::IO;
+    using IOTraits = fnfelt::monad::io::IOTraits<>;
+
+    // Direct: the transformer takes the value as a single argument.
+    static_assert(
+        IOTraits::validate_transform(^^IO<int (*)()>, ^^decltype([](int) { return 1; })).empty());
+    // Spread over pair.
+    static_assert(IOTraits::validate_transform(
+                      ^^IO<std::pair<int, int> (*)()>, ^^decltype([](int, int) { return 1; }))
+                      .empty());
+    // Spread over tuple.
+    static_assert(IOTraits::validate_transform(
+                      ^^IO<std::tuple<int, int> (*)()>, ^^decltype([](int, int) { return 1; }))
+                      .empty());
+    // Callable struct and function-pointer transformer.
+    static_assert(IOTraits::validate_transform(^^IO<int (*)()>, ^^ValidTransformer).empty());
+    static_assert(IOTraits::validate_transform(^^IO<int (*)()>, ^^int (*)(int)).empty());
+    // Source IO with custom traits is still accepted.
+    static_assert(
+        IOTraits::validate_transform(^^IO<int (*)(), CustomIOTraits>, ^^ValidTransformer).empty());
+}
+
+TEST_CASE("IOTraits::validate_transform rejects non-IO sources with the exact reason")
+{
+    using fnfelt::monad::io::IO;
+    using IOTraits = fnfelt::monad::io::IOTraits<>;
+
+    static_assert(
+        IOTraits::validate_transform(^^int, ^^ValidTransformer) == "source IO is not an IO");
+}
+
+TEST_CASE("IOTraits::validate_transform rejects transformer types with the exact reason")
+{
+    using fnfelt::monad::io::IO;
+    using IOTraits = fnfelt::monad::io::IOTraits<>;
+
+    // Void source value: an IO whose action produces no value cannot feed a transformer. The
+    // reflection does not instantiate the IO's class-scope action validation.
+    static_assert(
+        IOTraits::validate_transform(^^IO<void (*)()>, ^^decltype([](int) { return 1; })) ==
+        "source IO produces no value");
+    // Incomplete transformer.
+    static_assert(
+        IOTraits::validate_transform(^^IO<int (*)()>, ^^Incomplete) ==
+        "transformer function is not a complete type");
+    // Reference transformer.
+    static_assert(
+        IOTraits::validate_transform(^^IO<int (*)()>, ^^decltype([](int) { return 1; }) &) ==
+        "transformer function must not be a reference type");
+    // Non-class, non-function-pointer transformer.
+    static_assert(
+        IOTraits::validate_transform(^^IO<int (*)()>, ^^int) ==
+        "transformer function is not a class or function pointer type");
+    // Non-move-constructible transformer.
+    static_assert(
+        IOTraits::validate_transform(^^IO<int (*)()>, ^^NonMovableTransformer) ==
+        "transformer function must be move constructible");
+    // Does not accept the source IO's value.
+    static_assert(
+        IOTraits::validate_transform(^^IO<int (*)()>, ^^decltype([](std::string) { return 1; })) ==
+        "transformer function does not accept the source IO's value");
+    static_assert(
+        IOTraits::validate_transform(^^IO<int (*)()>, ^^decltype([](int, int) { return 1; })) ==
+        "transformer function does not accept the source IO's value");
+}
+
+TEST_CASE("IOTraits::validate_transform rejects invalid transformer result types")
+{
+    using fnfelt::monad::io::IO;
+    using IOTraits = fnfelt::monad::io::IOTraits<>;
+
+    // Direct: void result.
+    static_assert(
+        IOTraits::validate_transform(^^IO<int (*)()>, ^^decltype([](int) {})) ==
+        "transformer function does not return a value");
+    // Direct: reference result.
+    static_assert(
+        IOTraits::validate_transform(^^IO<int (*)()>, ^^TransformerReturnsReference) ==
+        "transformer function returns a reference, return by value instead");
+    // Direct: IO result.
+    static_assert(
+        IOTraits::validate_transform(^^IO<int (*)()>, ^^TransformerReturnsIO) ==
+        "transformer function should not return an IO");
+    // Direct: non-movable result.
+    static_assert(
+        IOTraits::validate_transform(^^IO<int (*)()>, ^^TransformerReturnsNonMovable) ==
+        "transformer function returns a non-movable type");
+    // Spread: void result.
+    static_assert(
+        IOTraits::validate_transform(
+            ^^IO<std::pair<int, int> (*)()>, ^^SpreadTransformerReturnsVoid) ==
+        "transformer function does not return a value");
+    // Spread: IO result.
+    static_assert(
+        IOTraits::validate_transform(
+            ^^IO<std::pair<int, int> (*)()>, ^^SpreadTransformerReturnsIO) ==
+        "transformer function should not return an IO");
 }
 
 TEST_CASE("IOTraits::validate_ap accepts compatible function and value IOs")
