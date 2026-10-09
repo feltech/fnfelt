@@ -43,6 +43,34 @@ struct TransformError
 };
 
 /**
+ * Reflection of the value a TransformAction produces when run.
+ *
+ * The transformer is applied with the source's value directly when possible, otherwise the value
+ * is spread into it (direct invocation wins over spreading), mirroring the action's dispatch.
+ *
+ * Used as the action's declared return type so that validating the action never instantiates its
+ * body, which would otherwise require copying a move-only nested action for the const receiver.
+ *
+ * @tparam TSourceIO Source IO to run.
+ * @tparam TTransformer Transformer taking the source's value and returning a plain value.
+ * @return Reflection of the value the action produces.
+ */
+template <class TSourceIO, class TTransformer>
+consteval std::meta::info transform_result_meta()
+{
+    constexpr std::meta::info value_meta = io_value_meta(^^TSourceIO);
+    if constexpr (is_directly_invocable(^^TTransformer, value_meta))
+    {
+        return invoke_result(^^TTransformer, {value_meta});
+    }
+    if constexpr (is_spread_invocable(^^TTransformer, value_meta))
+    {
+        return invoke_result(^^TTransformer, template_arguments_of(dealias(value_meta)));
+    }
+    return ^^void;
+}
+
+/**
  * Action that runs a source IO and feeds its value to a transformer, keeping the plain result.
  *
  * The transformer is invoked with the value directly when possible, otherwise the value is spread
@@ -57,6 +85,8 @@ struct TransformError
 template <class TSourceIO, class TTransformer>
 struct TransformAction
 {
+    /// Value the action produces when run.
+    using result_type = [:transform_result_meta<TSourceIO, TTransformer>():];
     /// Source IO to run.
     TSourceIO source;
     /// Transformer applied to the source's value.
@@ -69,10 +99,10 @@ struct TransformAction
      *
      * @return The transformer's plain result.
      */
-    constexpr auto operator()(this auto && self)
+    constexpr auto operator()(this auto && self) -> result_type
     {
         using source_value_type = TSourceIO::value_type;
-        auto input = FW(self).source();
+        auto input = FW(self).source().sync_wait();
         if constexpr (is_directly_invocable(^^TTransformer, ^^source_value_type))
         {
             return FW(self).transformer(std::move(input));

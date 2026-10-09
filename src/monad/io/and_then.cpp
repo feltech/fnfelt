@@ -58,7 +58,7 @@ consteval int constexpr_pipeline_and_then()
         fnfelt::monad::io::create([] { return 1; })
             .and_then([](int x) { return fnfelt::monad::io::create([x] { return x + 1; }); })
             .and_then([](int x) { return fnfelt::monad::io::create([x] { return x * 10; }); });
-    return bound();
+    return bound().sync_wait();
 }
 
 /// Constant-evaluated IO pipeline chaining via the named and_then overload.
@@ -69,7 +69,7 @@ consteval int constexpr_pipeline_and_then_named()
         fnfelt::monad::io::create([] { return 1; })
             .template and_then<"Named and_then"_ss>(
                 [](int x) { return fnfelt::monad::io::create([x] { return x + 1; }); });
-    return bound();
+    return bound().sync_wait();
 }
 
 /// Constant-evaluated IO pipeline chaining via the explicit-traits and_then overload.
@@ -79,7 +79,7 @@ consteval int constexpr_pipeline_and_then_traits()
         fnfelt::monad::io::create([] { return 1; })
             .template and_then<CustomIOTraits>(
                 [](int x) { return fnfelt::monad::io::create([x] { return x + 1; }); });
-    return bound();
+    return bound().sync_wait();
 }
 
 /// Constant-evaluated IO pipeline chaining via the free and_then function.
@@ -88,7 +88,7 @@ consteval int constexpr_pipeline_and_then_free()
     constexpr auto bound = fnfelt::monad::io::and_then(
         fnfelt::monad::io::create([] { return 1; }),
         [](int x) { return fnfelt::monad::io::create([x] { return x + 1; }); });
-    return bound();
+    return bound().sync_wait();
 }
 
 /// Constant-evaluated IO pipeline chaining via the free named and_then function.
@@ -98,7 +98,7 @@ consteval int constexpr_pipeline_and_then_free_named()
     constexpr auto bound = fnfelt::monad::io::and_then<"Named free and_then"_ss>(
         fnfelt::monad::io::create([] { return 1; }),
         [](int x) { return fnfelt::monad::io::create([x] { return x + 1; }); });
-    return bound();
+    return bound().sync_wait();
 }
 
 /// Constant-evaluated IO pipeline chaining via the free explicit-traits and_then function.
@@ -107,7 +107,7 @@ consteval int constexpr_pipeline_and_then_free_traits()
     constexpr auto bound = fnfelt::monad::io::and_then<CustomIOTraits>(
         fnfelt::monad::io::create([] { return 1; }),
         [](int x) { return fnfelt::monad::io::create([x] { return x + 1; }); });
-    return bound();
+    return bound().sync_wait();
 }
 
 /// Constant-evaluated IO pipeline spreading a pair value into the continuation.
@@ -117,7 +117,7 @@ consteval int constexpr_pipeline_spread()
         fnfelt::monad::io::create([] { return std::pair{1, 2}; })
             .and_then([](int x, int y)
                       { return fnfelt::monad::io::create([x, y] { return x + y; }); });
-    return bound();
+    return bound().sync_wait();
 }
 }  // namespace
 
@@ -127,7 +127,7 @@ TEST_CASE("IO and_then accepts a direct continuation and runs source then contin
 
     auto const bound =
         IO{[] { return 1; }}.and_then([](int x) { return IO{[x] { return x + 1; }}; });
-    CHECK_EQ(bound(), 2);
+    CHECK_EQ(bound().sync_wait(), 2);
 }
 
 TEST_CASE("IO and_then spreads pair and tuple values into the continuation")
@@ -136,11 +136,11 @@ TEST_CASE("IO and_then spreads pair and tuple values into the continuation")
 
     auto const bound_pair = IO{[] { return std::pair{1, 2}; }}.and_then(
         [](int x, int y) { return IO{[x, y] { return x + y; }}; });
-    CHECK_EQ(bound_pair(), 3);
+    CHECK_EQ(bound_pair().sync_wait(), 3);
 
     auto const bound_tuple = IO{[] { return std::tuple{3, 4}; }}.and_then(
         [](int x, int y) { return IO{[x, y] { return x * y; }}; });
-    CHECK_EQ(bound_tuple(), 12);
+    CHECK_EQ(bound_tuple().sync_wait(), 12);
 }
 
 TEST_CASE("IO and_then prefers direct invocation over spreading")
@@ -152,7 +152,7 @@ TEST_CASE("IO and_then prefers direct invocation over spreading")
     auto const bound = IO{[] { return std::pair{1, 2}; }}.and_then(
         [](std::pair<int, int> pair_value)
         { return IO{[pair_value] { return pair_value.first * 10 + pair_value.second; }}; });
-    CHECK_EQ(bound(), 12);
+    CHECK_EQ(bound().sync_wait(), 12);
 }
 
 TEST_CASE("IO and_then chains through successive continuations")
@@ -162,7 +162,7 @@ TEST_CASE("IO and_then chains through successive continuations")
     auto const bound = IO{[] { return 1; }}
                            .and_then([](int x) { return IO{[x] { return x + 1; }}; })
                            .and_then([](int x) { return IO{[x] { return x * 10; }}; });
-    CHECK_EQ(bound(), 20);
+    CHECK_EQ(bound().sync_wait(), 20);
 }
 
 TEST_CASE("IO and_then accepts an lvalue continuation and copies it")
@@ -183,10 +183,10 @@ TEST_CASE("IO and_then accepts an lvalue continuation and copies it")
 
     IdentityContinuation continuation_lvalue{10};
     auto const bound = IO{[] { return 1; }}.and_then(continuation_lvalue);
-    CHECK_EQ(bound(), 11);
+    CHECK_EQ(bound().sync_wait(), 11);
 
     // The lvalue is untouched, so it remains usable.
-    CHECK_EQ(continuation_lvalue(2)(), 12);
+    CHECK_EQ(continuation_lvalue(2)().sync_wait(), 12);
 }
 
 TEST_CASE("IO and_then works on a const IO and with a move-only continuation")
@@ -194,8 +194,8 @@ TEST_CASE("IO and_then works on a const IO and with a move-only continuation")
     using fnfelt::monad::io::IO;
 
     IO const source{[] { return 5; }};
-    auto const bound = source.and_then(MoveOnlyContinuation{});
-    CHECK_EQ(bound(), 7);
+    auto bound = source.and_then(MoveOnlyContinuation{});
+    CHECK_EQ(std::move(bound)().sync_wait(), 7);
 }
 
 TEST_CASE("IO with custom traits chains and runs end-to-end")
@@ -215,7 +215,7 @@ TEST_CASE("IO with custom traits chains and runs end-to-end")
     IO const source{[] { return 1; }};
     auto const bound = source.and_then(
         [](int x) { return IO<CustomAction, CustomIOTraits>{CustomAction{x + 1}}; });
-    CHECK_EQ(bound(), 2);
+    CHECK_EQ(bound().sync_wait(), 2);
 }
 
 TEST_CASE("and_then member defaults to IOTraits for the result")
@@ -227,7 +227,7 @@ TEST_CASE("and_then member defaults to IOTraits for the result")
     IO const source{[] { return 1; }};
     auto const bound = source.and_then([](int x) { return IO{[x] { return x + 1; }}; });
     static_assert(std::is_same_v<decltype(bound)::traits, IOTraits>);
-    CHECK_EQ(bound(), 2);
+    CHECK_EQ(bound().sync_wait(), 2);
 }
 
 TEST_CASE("and_then member with explicit traits uses those traits for the result")
@@ -238,7 +238,7 @@ TEST_CASE("and_then member with explicit traits uses those traits for the result
     auto const bound =
         source.template and_then<CustomIOTraits>([](int x) { return IO{[x] { return x + 1; }}; });
     static_assert(std::is_same_v<decltype(bound)::traits, CustomIOTraits>);
-    CHECK_EQ(bound(), 2);
+    CHECK_EQ(bound().sync_wait(), 2);
 }
 
 TEST_CASE("and_then member with a name names the result")
@@ -250,7 +250,7 @@ TEST_CASE("and_then member with a name names the result")
     auto const bound = source.template and_then<"Named and_then"_ss>(
         [](int x) { return IO{[x] { return x + 1; }}; });
     static_assert(decltype(bound)::traits::name == "Named and_then");
-    CHECK_EQ(bound(), 2);
+    CHECK_EQ(bound().sync_wait(), 2);
 }
 
 TEST_CASE("free and_then uses the default, named and explicit-traits forms")
@@ -263,17 +263,17 @@ TEST_CASE("free and_then uses the default, named and explicit-traits forms")
     auto const bound = fnfelt::monad::io::and_then(
         source, [](int x) { return fnfelt::monad::io::create([x] { return x + 1; }); });
     static_assert(std::is_same_v<decltype(bound)::traits, IOTraits>);
-    CHECK_EQ(bound(), 2);
+    CHECK_EQ(bound().sync_wait(), 2);
 
     auto const named = fnfelt::monad::io::and_then<"Named free and_then"_ss>(
         source, [](int x) { return fnfelt::monad::io::create([x] { return x + 1; }); });
     static_assert(decltype(named)::traits::name == "Named free and_then");
-    CHECK_EQ(named(), 2);
+    CHECK_EQ(named().sync_wait(), 2);
 
     auto const trait_bound = fnfelt::monad::io::and_then<CustomIOTraits>(
         source, [](int x) { return fnfelt::monad::io::create([x] { return x + 1; }); });
     static_assert(std::is_same_v<decltype(trait_bound)::traits, CustomIOTraits>);
-    CHECK_EQ(trait_bound(), 2);
+    CHECK_EQ(trait_bound().sync_wait(), 2);
 }
 
 TEST_CASE("and_then produces IOs usable in a constexpr pipeline")
@@ -295,40 +295,40 @@ TEST_CASE("and_then moves a move-only rvalue source through a chain without copy
     // A move-only source cannot be copied, so it must be moved into the AndThenAction member. The
     // action is move-only, hence so is the resulting IO.
     MoveTrackingAction::moves = 0;
-    auto const bound = IO<MoveTrackingAction, IOTraits<>>{MoveTrackingAction{}}.and_then(
+    auto bound = IO<MoveTrackingAction, IOTraits<>>{MoveTrackingAction{}}.and_then(
         [](int x) { return IO{[x] { return x + 1; }}; });
-    CHECK_EQ(bound(), 2);
+    CHECK_EQ(std::move(bound)().sync_wait(), 2);
     static_assert(!std::is_copy_constructible_v<decltype(bound)>);
-    // Three moves: the temporary action into the source IO's action member; the source IO into the
-    // AndThenAction's source member (the forwarding reference's forwarding); and the AndThenAction
-    // into the returned IO's action member. The rvalue temporary is elided into the IO
-    // constructor's by-value parameter, so it costs no extra move.
-    CHECK_EQ(MoveTrackingAction::moves, 3);
+    // Five moves. Construction: the temporary action into the source IO's action member; the source
+    // IO into the AndThenAction's source member; and the AndThenAction into the returned IO's
+    // action member (three). Running: the IO's action into the RunProxy by value; and the nested
+    // source IO into its own RunProxy when the AndThenAction runs (two). The rvalue temporary is
+    // elided into the IO constructor's by-value parameter, so it costs no extra move.
+    CHECK_EQ(MoveTrackingAction::moves, 5);
 
     // Each further hop moves the whole nested source IO once into the new AndThenAction member and
     // the new AndThenAction once into the returned IO's action member, so the two-hop chain costs
-    // two more moves than the one-hop chain. The old by-value signature additionally moved the
-    // whole IO into its by-value parameter on entry, costing one extra move per hop (7 in total for
-    // the chain).
+    // two more moves than the one-hop chain to construct. Running adds one more nested source-IO
+    // move for the extra hop, so eight in total.
     MoveTrackingAction::moves = 0;
-    auto const chained = IO<MoveTrackingAction, IOTraits<>>{MoveTrackingAction{}}
-                             .and_then([](int x) { return IO{[x] { return x + 1; }}; })
-                             .and_then([](int x) { return IO{[x] { return x * 10; }}; });
-    CHECK_EQ(chained(), 20);
+    auto chained = IO<MoveTrackingAction, IOTraits<>>{MoveTrackingAction{}}
+                       .and_then([](int x) { return IO{[x] { return x + 1; }}; })
+                       .and_then([](int x) { return IO{[x] { return x * 10; }}; });
+    CHECK_EQ(std::move(chained)().sync_wait(), 20);
     static_assert(!std::is_copy_constructible_v<decltype(chained)>);
-    CHECK_EQ(MoveTrackingAction::moves, 5);
+    CHECK_EQ(MoveTrackingAction::moves, 8);
 
     // The free function is a forwarding reference too, so a directly-passed prvalue rvalue source
     // costs the same as the member form (the temporary is direct-initialised into the stored
     // action). Pinned here so a regression to a by-value source parameter would show up for the
     // move-only case.
     MoveTrackingAction::moves = 0;
-    auto const free_bound = fnfelt::monad::io::and_then(
+    auto free_bound = fnfelt::monad::io::and_then(
         IO<MoveTrackingAction, IOTraits<>>{MoveTrackingAction{}},
         [](int x) { return IO{[x] { return x + 1; }}; });
-    CHECK_EQ(free_bound(), 2);
+    CHECK_EQ(std::move(free_bound)().sync_wait(), 2);
     static_assert(!std::is_copy_constructible_v<decltype(free_bound)>);
-    CHECK_EQ(MoveTrackingAction::moves, 3);
+    CHECK_EQ(MoveTrackingAction::moves, 5);
 }
 
 TEST_CASE("and_then copies an lvalue IO source, leaving the caller's IO usable")
@@ -339,8 +339,8 @@ TEST_CASE("and_then copies an lvalue IO source, leaving the caller's IO usable")
     auto const source = IO{[] { return 1; }};
     auto const bound =
         fnfelt::monad::io::and_then(source, [](int x) { return IO{[x] { return x + 1; }}; });
-    CHECK_EQ(bound(), 2);
-    CHECK_EQ(source(), 1);
+    CHECK_EQ(bound().sync_wait(), 2);
+    CHECK_EQ(source().sync_wait(), 1);
 }
 
 namespace and_then_error_msg_test

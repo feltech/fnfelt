@@ -28,13 +28,30 @@ consteval bool is_io(std::meta::info type_meta);
 
 /// Default name for IO monad diagnostics.
 inline constexpr char default_io_name[] = "IO";  // NOLINT(*-avoid-c-arrays)
+/// @endcond
 
+/**
+ * Canonical tag marking an IO action as asynchronous.
+ *
+ * An action is detected as asynchronous when its invocation result derives from this tag and the
+ * result exposes a `value_type` alias naming the asynchronous result type. User-defined async
+ * proxies derive from it.
+ */
+struct AsyncProxyTag
+{
+};
+
+/// @cond
 /// Default traits for the IO monad, naming the instantiation used in diagnostics.
 template <char const * name_cstr = default_io_name>
 struct IOTraits;
 
 template <class TAction, class TTraits = IOTraits<>>
 class IO;
+
+/// Run proxy returned by IO's call operator, defined in async.hpp.
+template <class TAction>
+struct RunProxy;
 
 // Forward declarations for the free and_then functions used by IO's member and_then overloads;
 // defined and documented in and_then.hpp. The IOs are taken by forwarding reference so rvalue

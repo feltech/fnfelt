@@ -291,7 +291,7 @@ path). The reviewer checks the implementation against this section.
 - **`consteval` survival** verified: `io().sync_wait()` `static_assert`s on 3-deep fully-sync
   chains; mixed chains compile via a per-level `if constexpr` split; scheduler args are
   accepted-and-ignored on sync proxies (unnamed `auto&&...` pack avoids `-Werror=unused-parameter`);
-  a class-scope `consteval` validation block + proxy `value` splice works.
+  a class-scope `consteval` validation block + proxy `value_type` splice works.
 - **Reflection details**: alias extraction uses `dealias(member)`, **not** `type_of` (throws for
   aliases); guard `is_complete_type` + `is_class_type` before `is_base_of_type` (incomplete derived
   type is a hard gcc error); `members_of` omits inherited members → walk `bases_of`; define
@@ -330,13 +330,14 @@ path). The reviewer checks the implementation against this section.
   `action_value_meta`, `is_empty_object`) in `io/detail.hpp`; `RunProxy`/`create_async`/async arms
   in new `io/async.hpp`, added to the umbrella `io.hpp` with `// IWYU pragma: export` and its
   `FILE_SET`.
-- **Naming** per `.clang-tidy`: `AsyncProxyTag` (CamelCase); the proxy's nested alias is `value`
-  (lower_case member alias, symmetric with `IO::value_type`) — a deliberate deviation from
-  vulkanisedfelt's `async_function_tag_t`/`IOResultType`.
+- **Naming** per `.clang-tidy`: `AsyncProxyTag` (CamelCase); the proxy's nested alias is
+  `value_type` (lower_case member alias disambiguated with a `_type` suffix per the repo naming
+  convention, matching `IO::value_type`) — still a deliberate deviation from vulkanisedfelt's
+  `async_function_tag_t`/`IOResultType`.
 
 ### Validation
 
-- `validate_action` extended to accept tag-deriving proxies exposing a `value` alias; reject
+- `validate_action` extended to accept tag-deriving proxies exposing a `value_type` alias; reject
   async-void with a readable reason ("async IO actions must not produce void"; the reference's
   `co_return *value` shape is void-incompatible). Leaf statelessness is enforced at `create_async`
   (an empty-closure check on the deduced `TFn`), while composed proxies' `fn` members are always
@@ -353,12 +354,13 @@ Each a separate green commit. `FILE_SET`/umbrella updated in the stage that crea
   `libfork::libfork` to `fnfelt.lib` with `INTERFACE` (**not** `PUBLIC` — configure error on the
   header-only INTERFACE lib); re-run `conan install .`. Full build + `ctest` green with the dep in
   place.
-- **B — `RunProxy` core**: `fwd.hpp` gains `AsyncProxyTag` + `RunProxy` fwd-decl; `detail.hpp` gains
-  helpers; `IO::operator()` migrates to return `RunProxy`; ALL existing tests → `io().sync_wait()`;
-  detection-only mock-proxy tests (incl. a void-`value` variant) and a copy-counting doctest; update
-  `IO.hpp`'s doc comment. `consteval` tests still pass as `constexpr`; async branch stubbed.
+- **B — `RunProxy` core — COMPLETE**: `fwd.hpp` gains `AsyncProxyTag` + `RunProxy` fwd-decl;
+  `detail.hpp` gains helpers; `IO::operator()` migrates to return `RunProxy`; ALL existing tests →
+  `io().sync_wait()`; detection-only mock-proxy tests (incl. a void-`value_type` variant) and a
+  copy-counting doctest; update `IO.hpp`'s doc comment. `consteval` tests still pass as `constexpr`;
+  async branch stubbed.
 - **C — async leaves + and_then**: `create_async`; statelessness enforcement + compile-fails
-  (stateful `fn`, missing `value` alias) HERE; async leaf proxies (arg tuple, no stored `fn`);
+  (stateful `fn`, missing `value_type` alias) HERE; async leaf proxies (arg tuple, no stored `fn`);
   async/mixed `AndThenAction`; mixed-chain and sync-over-async / async-over-sync tests;
   `std::unique_ptr<int>` through an and_then with a not-copy-constructible `static_assert`; a
   `std::pair<int,int>` spread-on-async test; ASan/UBSan via `-Dfnfelt_ENABLE_SANITIZER_ASAN=ON`.
@@ -389,7 +391,7 @@ Each a separate green commit. `FILE_SET`/umbrella updated in the stage that crea
   compile-fail.
 - `-Wsfinae-incomplete` if detection runs on incomplete proxies → tag/proxy machinery in a low-level
   header with ordered includes; guard with `is_complete_type` (returns `false`, not an error).
-- `members_of` omits inherited `value` → walk `bases_of` (probe-verified).
+- `members_of` omits inherited `value_type` → walk `bases_of` (probe-verified).
 - `type_of` on an alias throws → use `dealias` (probe-verified).
 - `constexpr` + coroutine lambda quirks → only stateless `static constexpr` lambdas on the async
   path (probe-verified).

@@ -81,14 +81,27 @@ struct IOTraits
         {
             return "provided action is only callable when non-const";
         }
-        std::meta::info result_meta = invoke_result(action_meta, {});
-        if (is_void_type(result_meta))
-        {
-            return "provided action does not return a value";
-        }
+        std::meta::info const result_meta = invoke_result(action_meta, {});
         if (is_reference_type(result_meta))
         {
             return "provided action returns a reference, return by value instead";
+        }
+        if (detail::action_is_async(action_meta))
+        {
+            std::meta::info const proxy_meta = remove_cvref(result_meta);
+            if (!detail::async_proxy_has_value(proxy_meta))
+            {
+                return "provided action's async proxy does not expose a value_type alias";
+            }
+            if (is_void_type(detail::async_proxy_value_meta(proxy_meta)))
+            {
+                return "provided action's async proxy must not produce void";
+            }
+            return {};
+        }
+        if (is_void_type(result_meta))
+        {
+            return "provided action does not return a value";
         }
         if (is_io(result_meta))
         {

@@ -26,9 +26,10 @@ consteval int constexpr_pipeline_umbrella()
     constexpr auto transformed = create([] { return 1; }).transform([](int x) { return x + 1; });
     constexpr auto bound =
         transformed.and_then([](int x) { return create([x] { return x + 1; }); });
-    constexpr auto applied = ap(
-        create([] { return [](int x) { return x * 10; }; }), create([bound] { return bound(); }));
-    return applied();
+    constexpr auto applied =
+        ap(create([] { return [](int x) { return x * 10; }; }),
+           create([bound] { return bound().sync_wait(); }));
+    return applied().sync_wait();
 }
 }  // namespace
 
@@ -55,11 +56,11 @@ TEST_CASE("The io.hpp umbrella provides the full public interface")
     static_assert(std::is_same_v<decltype(free_transformed)::traits, IOTraits>);
     static_assert(std::is_same_v<decltype(applied)::traits, IOTraits>);
 
-    CHECK_EQ(bound(), 2);
-    CHECK_EQ(free_bound(), 2);
-    CHECK_EQ(transformed(), 2);
-    CHECK_EQ(free_transformed(), 2);
-    CHECK_EQ(applied(), 20);
+    CHECK_EQ(bound().sync_wait(), 2);
+    CHECK_EQ(free_bound().sync_wait(), 2);
+    CHECK_EQ(transformed().sync_wait(), 2);
+    CHECK_EQ(free_transformed().sync_wait(), 2);
+    CHECK_EQ(applied().sync_wait(), 20);
 }
 
 TEST_CASE("The umbrella header supports a constexpr pipeline end-to-end")

@@ -44,6 +44,37 @@ struct AndThenError
 };
 
 /**
+ * Reflection of the value an AndThenAction produces when run.
+ *
+ * The continuation is applied with the source's value directly when possible, otherwise the value
+ * is spread into it (direct invocation wins over spreading), mirroring the action's dispatch. The
+ * invocation result is the continuation's IO, whose own value (async-transparent) is the final
+ * value.
+ *
+ * Used as the action's declared return type so that validating the action never instantiates its
+ * body, which would otherwise require copying a move-only nested action for the const receiver.
+ *
+ * @tparam TSourceIO Source IO to run.
+ * @tparam TContinuation Continuation taking the source's value and returning an IO.
+ * @return Reflection of the value the action produces.
+ */
+template <class TSourceIO, class TContinuation>
+consteval std::meta::info and_then_result_meta()
+{
+    constexpr std::meta::info value_meta = io_value_meta(^^TSourceIO);
+    if constexpr (is_directly_invocable(^^TContinuation, value_meta))
+    {
+        return io_value_meta(invoke_result(^^TContinuation, {value_meta}));
+    }
+    if constexpr (is_spread_invocable(^^TContinuation, value_meta))
+    {
+        return io_value_meta(
+            invoke_result(^^TContinuation, template_arguments_of(dealias(value_meta))));
+    }
+    return ^^void;
+}
+
+/**
  * Action that runs a source IO and feeds its value to a continuation.
  *
  * The continuation is invoked with the value directly when possible, otherwise the value is spread
@@ -57,6 +88,8 @@ struct AndThenError
 template <class TSourceIO, class TContinuation>
 struct AndThenAction
 {
+    /// Value the action produces when run.
+    using result_type = [:and_then_result_meta<TSourceIO, TContinuation>():];
     /// Source IO to run.
     TSourceIO source;
     /// Continuation applied to the source's value.
@@ -69,19 +102,19 @@ struct AndThenAction
      *
      * @return The final value.
      */
-    constexpr auto operator()(this auto && self)
+    constexpr auto operator()(this auto && self) -> result_type
     {
         using source_value_type = TSourceIO::value_type;
-        auto input = FW(self).source();
+        auto input = FW(self).source().sync_wait();
         if constexpr (is_directly_invocable(^^TContinuation, ^^source_value_type))
         {
             auto next = FW(self).continuation(std::move(input));
-            return std::move(next)();
+            return std::move(next)().sync_wait();
         }
         if constexpr (is_spread_invocable(^^TContinuation, ^^source_value_type))
         {
             auto next = std::apply(FW(self).continuation, std::move(input));
-            return std::move(next)();
+            return std::move(next)().sync_wait();
         }
     }
 };

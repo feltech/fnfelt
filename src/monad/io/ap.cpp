@@ -108,7 +108,7 @@ consteval int constexpr_pipeline_ap()
     constexpr auto applied = fnfelt::monad::io::ap(
         fnfelt::monad::io::create([] { return [](int x) { return x * 2; }; }),
         fnfelt::monad::io::create([] { return 21; }));
-    return applied();
+    return applied().sync_wait();
 }
 
 /// Constant-evaluated IO pipeline spreading a pair value into the callable.
@@ -117,7 +117,7 @@ consteval int constexpr_pipeline_ap_spread()
     constexpr auto applied = fnfelt::monad::io::ap(
         fnfelt::monad::io::create([] { return [](int lhs, int rhs) { return lhs * rhs; }; }),
         fnfelt::monad::io::create([] { return std::pair{6, 7}; }));
-    return applied();
+    return applied().sync_wait();
 }
 
 /// Constant-evaluated IO pipeline composing ap with a subsequent and_then.
@@ -128,7 +128,7 @@ consteval int constexpr_pipeline_ap_and_then()
             fnfelt::monad::io::create([] { return [](int x) { return x + 1; }; }),
             fnfelt::monad::io::create([] { return 1; }))
             .and_then([](int x) { return fnfelt::monad::io::create([x] { return x * 10; }); });
-    return bound();
+    return bound().sync_wait();
 }
 
 /// Constant-evaluated IO pipeline applying a function IO to a value IO via the named ap overload.
@@ -138,7 +138,7 @@ consteval int constexpr_pipeline_ap_named()
     constexpr auto applied = fnfelt::monad::io::ap<"Named ap"_ss>(
         fnfelt::monad::io::create([] { return [](int x) { return x * 2; }; }),
         fnfelt::monad::io::create([] { return 21; }));
-    return applied();
+    return applied().sync_wait();
 }
 
 /// Constant-evaluated IO pipeline applying a function IO to a value IO via the explicit-traits ap
@@ -148,7 +148,7 @@ consteval int constexpr_pipeline_ap_traits()
     constexpr auto applied = fnfelt::monad::io::ap<CustomIOTraits>(
         fnfelt::monad::io::create([] { return [](int x) { return x * 2; }; }),
         fnfelt::monad::io::create([] { return 21; }));
-    return applied();
+    return applied().sync_wait();
 }
 
 /// Named function used to build an IO result from an ap application.
@@ -280,7 +280,7 @@ TEST_CASE("ap applies the IO-wrapped function's callable to the IO-wrapped value
 
     auto const result = fnfelt::monad::io::ap(
         IO{[] { return [](int x) { return x + 1; }; }}, IO{[] { return 41; }});
-    CHECK_EQ(result(), 42);
+    CHECK_EQ(result().sync_wait(), 42);
 }
 
 TEST_CASE("ap produces IOs usable in a constexpr pipeline")
@@ -304,7 +304,7 @@ TEST_CASE("ap defaults to IOTraits for the result, not the argument IOs' traits"
         IO<decltype(fn_action), CustomIOTraits>{fn_action},
         IO<decltype(value_action), CustomIOTraits>{value_action});
     static_assert(std::is_same_v<decltype(applied)::traits, IOTraits>);
-    CHECK_EQ(applied(), 2);
+    CHECK_EQ(applied().sync_wait(), 2);
 }
 
 TEST_CASE("ap with a name names the result")
@@ -315,16 +315,16 @@ TEST_CASE("ap with a name names the result")
     auto const result = fnfelt::monad::io::ap<"Named"_ss>(
         IO{[] { return [](int x) { return x + 1; }; }}, IO{[] { return 41; }});
     static_assert(decltype(result)::traits::name == "Named");
-    CHECK_EQ(result(), 42);
+    CHECK_EQ(result().sync_wait(), 42);
 
     // A named ap with an lvalue function IO and an rvalue value IO still resolves to the named IO
     // overload (the named workhorse handles both IO arguments), naming the result.
     auto const fn_io = IO{[] { return [](int x) { return x * 2; }; }};
     auto const mixed = fnfelt::monad::io::ap<"Named mixed"_ss>(fn_io, IO{[] { return 21; }});
     static_assert(decltype(mixed)::traits::name == "Named mixed");
-    CHECK_EQ(mixed(), 42);
+    CHECK_EQ(mixed().sync_wait(), 42);
     // The lvalue function IO is untouched, so it remains usable.
-    CHECK_EQ(fn_io()(2), 4);
+    CHECK_EQ(fn_io().sync_wait()(2), 4);
 }
 
 TEST_CASE("ap with explicit traits uses those traits for the result and validation")
@@ -336,14 +336,14 @@ TEST_CASE("ap with explicit traits uses those traits for the result and validati
     auto const result = fnfelt::monad::io::ap<CustomIOTraits>(
         IO{[] { return [](int x) { return x * 2; }; }}, IO{[] { return 21; }});
     static_assert(std::is_same_v<decltype(result)::traits, CustomIOTraits>);
-    CHECK_EQ(result(), 42);
+    CHECK_EQ(result().sync_wait(), 42);
 
     // The function IO's custom traits do not leak into the result when overridden.
     auto const fn_action = [] { return [](int x) { return x + 1; }; };
     auto const overridden = fnfelt::monad::io::ap<IOTraits>(
         IO<decltype(fn_action), CustomIOTraits>{fn_action}, IO{[] { return 1; }});
     static_assert(std::is_same_v<decltype(overridden)::traits, IOTraits>);
-    CHECK_EQ(overridden(), 2);
+    CHECK_EQ(overridden().sync_wait(), 2);
 }
 
 TEST_CASE("ap copies lvalue IOs and moves rvalue IOs")
@@ -353,13 +353,13 @@ TEST_CASE("ap copies lvalue IOs and moves rvalue IOs")
     auto const fn_io = IO{[] { return [](int x) { return x + 1; }; }};
     auto const value_io = IO{[] { return 1; }};
     auto const copied = fnfelt::monad::io::ap(fn_io, value_io);
-    CHECK_EQ(copied(), 2);
+    CHECK_EQ(copied().sync_wait(), 2);
     // The lvalues are untouched, so they remain usable.
-    CHECK_EQ(fn_io()(1), 2);
-    CHECK_EQ(value_io(), 1);
+    CHECK_EQ(fn_io().sync_wait()(1), 2);
+    CHECK_EQ(value_io().sync_wait(), 1);
 
-    auto const moved = fnfelt::monad::io::ap(IO{MoveOnlyFnAction{}}, IO{MoveOnlyValueAction{}});
-    CHECK_EQ(moved(), 20);
+    auto moved = fnfelt::monad::io::ap(IO{MoveOnlyFnAction{}}, IO{MoveOnlyValueAction{}});
+    CHECK_EQ(std::move(moved)().sync_wait(), 20);
     static_assert(!std::is_copy_constructible_v<decltype(moved)>);
 }
 
@@ -370,12 +370,12 @@ TEST_CASE("ap spreads pair and tuple values into the callable")
     auto const applied_pair = fnfelt::monad::io::ap(
         IO{[] { return [](int lhs, int rhs) { return lhs + rhs; }; }},
         IO{[] { return std::pair{1, 2}; }});
-    CHECK_EQ(applied_pair(), 3);
+    CHECK_EQ(applied_pair().sync_wait(), 3);
 
     auto const applied_tuple = fnfelt::monad::io::ap(
         IO{[] { return [](int lhs, int rhs) { return lhs * rhs; }; }},
         IO{[] { return std::tuple{3, 4}; }});
-    CHECK_EQ(applied_tuple(), 12);
+    CHECK_EQ(applied_tuple().sync_wait(), 12);
 }
 
 TEST_CASE("ap prefers direct invocation over spreading")
@@ -390,22 +390,22 @@ TEST_CASE("ap prefers direct invocation over spreading")
                { return pair_value.first + pair_value.second; };
            }},
         IO{[] { return std::pair{1, 2}; }});
-    CHECK_EQ(applied(), 3);
+    CHECK_EQ(applied().sync_wait(), 3);
 
     // An overloaded functor pins precedence at runtime: the pair-taking overload must win.
     auto const overloaded = fnfelt::monad::io::ap(
         IO{[] { return OverloadedFn{}; }}, IO{[] { return std::pair{1, 2}; }});
-    CHECK_EQ(overloaded(), 12);
+    CHECK_EQ(overloaded().sync_wait(), 12);
 }
 
 TEST_CASE("ap moves spread elements into the callable")
 {
     using fnfelt::monad::io::IO;
 
-    auto const applied = fnfelt::monad::io::ap(
+    auto applied = fnfelt::monad::io::ap(
         IO{[] { return [](int mult, std::unique_ptr<int> ptr) { return *ptr * mult; }; }},
         IO{MoveOnlyPairAction{}});
-    CHECK_EQ(applied(), 40);
+    CHECK_EQ(std::move(applied)().sync_wait(), 40);
     static_assert(!std::is_copy_constructible_v<decltype(applied)>);
 }
 
@@ -417,29 +417,29 @@ TEST_CASE("ap moves move-only rvalue IOs through a chain without copying")
     // A move-only value IO cannot be copied, so it must be moved into the ApAction member. The
     // action is move-only, hence so is the resulting IO.
     MoveTrackingValueAction::moves = 0;
-    auto const applied = fnfelt::monad::io::ap(
+    auto applied = fnfelt::monad::io::ap(
         IO{[] { return [](int x) { return x + 1; }; }},
         IO<MoveTrackingValueAction, IOTraits<>>{MoveTrackingValueAction{}});
-    CHECK_EQ(applied(), 11);
+    CHECK_EQ(std::move(applied)().sync_wait(), 11);
     static_assert(!std::is_copy_constructible_v<decltype(applied)>);
-    // Three moves: the temporary action into the value IO's action member; the value IO into the
-    // ApAction's value_io member (the forwarding reference's forwarding); and the ApAction into the
-    // returned IO's action member. The rvalue temporary is elided into the IO constructor's
-    // by-value parameter, so it costs no extra move.
-    CHECK_EQ(MoveTrackingValueAction::moves, 3);
+    // Five moves. Construction: the temporary action into the value IO's action member; the value
+    // IO into the ApAction's value_io member; and the ApAction into the returned IO's action member
+    // (three). Running: the IO's action into the RunProxy by value; and the value IO into its own
+    // RunProxy when the ApAction runs (two). The rvalue temporary is elided into the IO
+    // constructor's by-value parameter, so it costs no extra move.
+    CHECK_EQ(MoveTrackingValueAction::moves, 5);
 
     // Composing an and_then moves the whole ap result into the AndThenAction's source member and
-    // the new AndThenAction into the returned IO's action member, two further moves. The old
-    // by-value signature additionally moved each IO into its by-value parameter on entry, costing
-    // one extra move per hop.
+    // the new AndThenAction into the returned IO's action member, two further moves to construct.
+    // Running adds one more nested source-IO move for the extra hop, so eight in total.
     MoveTrackingValueAction::moves = 0;
-    auto const bound = fnfelt::monad::io::ap(
-                           IO{[] { return [](int x) { return x + 1; }; }},
-                           IO<MoveTrackingValueAction, IOTraits<>>{MoveTrackingValueAction{}})
-                           .and_then([](int x) { return IO{[x] { return x * 10; }}; });
-    CHECK_EQ(bound(), 110);
+    auto bound = fnfelt::monad::io::ap(
+                     IO{[] { return [](int x) { return x + 1; }; }},
+                     IO<MoveTrackingValueAction, IOTraits<>>{MoveTrackingValueAction{}})
+                     .and_then([](int x) { return IO{[x] { return x * 10; }}; });
+    CHECK_EQ(std::move(bound)().sync_wait(), 110);
     static_assert(!std::is_copy_constructible_v<decltype(bound)>);
-    CHECK_EQ(MoveTrackingValueAction::moves, 5);
+    CHECK_EQ(MoveTrackingValueAction::moves, 8);
 }
 
 TEST_CASE("ap copies lvalue IOs independently of an rvalue argument")
@@ -452,15 +452,15 @@ TEST_CASE("ap copies lvalue IOs independently of an rvalue argument")
     auto const value_io = IO{[] { return 21; }};
     auto const result =
         fnfelt::monad::io::ap(IO{[] { return [](int x) { return x * 2; }; }}, value_io);
-    CHECK_EQ(result(), 42);
-    CHECK_EQ(value_io(), 21);
+    CHECK_EQ(result().sync_wait(), 42);
+    CHECK_EQ(value_io().sync_wait(), 21);
 
     // A move-only rvalue value IO paired with an lvalue function IO can still be moved (the free
     // `ap` forwards each argument independently), so this must compile and run.
     auto const fn_io = IO{[] { return [](int x) { return x + 1; }; }};
-    auto const mixed = fnfelt::monad::io::ap(
+    auto mixed = fnfelt::monad::io::ap(
         fn_io, IO<MoveTrackingValueAction, IOTraits<>>{MoveTrackingValueAction{}});
-    CHECK_EQ(mixed(), 11);
+    CHECK_EQ(std::move(mixed)().sync_wait(), 11);
     static_assert(!std::is_copy_constructible_v<decltype(mixed)>);
 }
 

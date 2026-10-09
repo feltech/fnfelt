@@ -88,13 +88,13 @@ TEST_CASE("IO exposes the value type its action produces")
     static_assert(std::is_same_v<IO<int (*)()>::value_type, int>);
 }
 
-TEST_CASE("IO operator() runs the action and returns its value")
+TEST_CASE("IO operator() yields a run proxy whose sync_wait runs the action")
 {
     using fnfelt::monad::io::IO;
 
-    CHECK_EQ(IO{[value = 123] { return value; }}(), 123);
-    CHECK_EQ(IO{CallableStruct{}}(), 7);
-    CHECK_EQ(IO{&free_action}(), 42);
+    CHECK_EQ(IO{[value = 123] { return value; }}().sync_wait(), 123);
+    CHECK_EQ(IO{CallableStruct{}}().sync_wait(), 7);
+    CHECK_EQ(IO{&free_action}().sync_wait(), 42);
 }
 
 // NOLINTEND(*-magic-numbers)

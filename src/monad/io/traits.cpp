@@ -181,6 +181,61 @@ constexpr auto void_fn_action = [] { return [](int) {}; };
 /// Action returning a callable taking two ints and returning void - spread-fed but must fail ap.
 constexpr auto two_arg_void_fn_action = [] { return [](int, int) {}; };
 
+/// Async proxy deriving from the tag, exposing a `value_type` alias - passes action validation.
+template <class TValue>
+struct AsyncProxy : fnfelt::monad::io::AsyncProxyTag
+{
+    using value_type = TValue;
+};
+
+/// Action returning a valid async proxy.
+struct AsyncAction
+{
+    constexpr AsyncProxy<int> operator()() const
+    {
+        return {};
+    }
+};
+
+/// Async proxy without a `value_type` alias - must fail action validation.
+struct MissingValueProxy : fnfelt::monad::io::AsyncProxyTag
+{
+};
+
+/// Action returning an async proxy without a `value_type` alias.
+struct MissingValueAction
+{
+    constexpr MissingValueProxy operator()() const
+    {
+        return {};
+    }
+};
+
+/// Async proxy whose `value_type` alias is void - must fail action validation.
+struct VoidValueProxy : fnfelt::monad::io::AsyncProxyTag
+{
+    using value_type = void;
+};
+
+/// Action returning an async proxy whose `value_type` alias is void.
+struct VoidValueAction
+{
+    constexpr VoidValueProxy operator()() const
+    {
+        return {};
+    }
+};
+
+/// Action returning a reference to a valid async proxy - must fail action validation.
+struct ReferenceAsyncAction
+{
+    AsyncProxy<int> & operator()() const
+    {
+        static AsyncProxy<int> proxy;
+        return proxy;
+    }
+};
+
 inline constexpr char custom_io_name[] = "CustomIO";
 using CustomIOTraits = fnfelt::monad::io::IOTraits<custom_io_name>;
 }  // namespace
@@ -549,6 +604,27 @@ TEST_CASE("IOTraits::validate_ap accepts direct and spread callable types")
         IOTraits::validate_ap(
             ^^IO<decltype(two_arg_void_fn_action)>, ^^IO<std::pair<int, int> (*)()>) ==
         "IO-wrapped function's callable does not return a value");
+}
+
+TEST_CASE("IOTraits::validate_action accepts async proxies and rejects malformed ones")
+{
+    using IOTraits = fnfelt::monad::io::IOTraits<>;
+
+    // A tag-deriving action whose proxy exposes a non-void `value_type` alias is valid.
+    static_assert(IOTraits::validate_action(^^AsyncAction).empty());
+    // A proxy without a `value_type` alias is rejected with a specific reason.
+    static_assert(
+        IOTraits::validate_action(^^MissingValueAction) ==
+        "provided action's async proxy does not expose a value_type alias");
+    // A proxy whose `value_type` alias is void is rejected with a specific reason.
+    static_assert(
+        IOTraits::validate_action(^^VoidValueAction) ==
+        "provided action's async proxy must not produce void");
+    // A reference to a valid async proxy is still rejected: the reference check applies to both the
+    // synchronous and asynchronous paths.
+    static_assert(
+        IOTraits::validate_action(^^ReferenceAsyncAction) ==
+        "provided action returns a reference, return by value instead");
 }
 
 // NOLINTEND(*-magic-numbers)

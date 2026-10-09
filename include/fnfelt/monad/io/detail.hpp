@@ -54,10 +54,100 @@ consteval bool all_template_arguments_are_types(std::meta::info target_meta)
 }
 
 /**
+ * Check whether an action is asynchronous, i.e. its invocation result derives from
+ * @c AsyncProxyTag.
+ *
+ * @param action_meta Reflection of the action type.
+ * @return True if the action's invocation result derives from @c AsyncProxyTag.
+ */
+consteval bool action_is_async(std::meta::info action_meta)
+{
+    action_meta = dealias(remove_cvref(action_meta));
+    // Invocability queries are a hard, non-catchable gcc error for incomplete types.
+    if (!is_complete_type(action_meta) || !is_invocable_type(action_meta, {}))
+    {
+        return false;
+    }
+    std::meta::info const result_meta = remove_cvref(invoke_result(action_meta, {}));
+    // `is_base_of_type` is a hard error for an incomplete derived type.
+    if (!is_complete_type(result_meta) || !is_class_type(result_meta))
+    {
+        return false;
+    }
+    // Belt-and-braces for the remaining throwing paths.
+    try
+    {
+        return is_base_of_type(^^AsyncProxyTag, result_meta);
+    }
+    catch (std::meta::exception const &)
+    {
+        return false;
+    }
+}
+
+/**
+ * Find the `value_type` alias an async proxy exposes.
+ *
+ * @param proxy_meta Reflection of the proxy type.
+ * @return Reflection of the alias member, or `void` if no such alias is found.
+ */
+consteval std::meta::info async_proxy_value_alias(std::meta::info proxy_meta)
+{
+    // Querying members of an incomplete type is a hard error, so guard completeness first.
+    if (!is_complete_type(proxy_meta) || !is_class_type(proxy_meta))
+    {
+        return ^^void;
+    }
+    // `members_of` does not list inherited members, so bases are walked too.
+    for (std::meta::info const member :
+         members_of(proxy_meta, std::meta::access_context::unprivileged()))
+    {
+        if (is_type_alias(member) && has_identifier(member) &&
+            identifier_of(member) == "value_type")
+        {
+            return member;
+        }
+    }
+    for (std::meta::info const base :
+         bases_of(proxy_meta, std::meta::access_context::unprivileged()))
+    {
+        std::meta::info const found = async_proxy_value_alias(type_of(base));
+        if (is_type_alias(found))
+        {
+            return found;
+        }
+    }
+    return ^^void;
+}
+
+/**
+ * Check whether an async proxy exposes a `value_type` alias.
+ *
+ * @param proxy_meta Reflection of the proxy type.
+ * @return True if the proxy (or a base) has a `value_type` alias.
+ */
+consteval bool async_proxy_has_value(std::meta::info proxy_meta)
+{
+    // The `void` placeholder is not an alias member, so `is_type_alias` discriminates it.
+    return is_type_alias(async_proxy_value_alias(proxy_meta));
+}
+
+/**
+ * Reflection of the value an async proxy produces when run.
+ *
+ * @param proxy_meta Reflection of the proxy type.
+ * @return Reflection of the `value_type` alias target, or `void` if no alias is found.
+ */
+consteval std::meta::info async_proxy_value_meta(std::meta::info proxy_meta)
+{
+    // `type_of` throws for alias reflections on gcc 16.2, so dealias before use.
+    return dealias(async_proxy_value_alias(proxy_meta));
+}
+
+/**
  * Reflection of the value an action produces when run.
  *
- * Incomplete actions (or non-callable types) have no meaningful result, but invocability queries
- * are a hard error for incomplete types, so `void` is returned as a placeholder in that case.
+ * An asynchronous action's value comes from its proxy's `value_type` alias.
  *
  * @param action_meta Reflection of the action type.
  * @return Reflection of the action's invocation result, or `void` if the action is incomplete or
@@ -65,8 +155,13 @@ consteval bool all_template_arguments_are_types(std::meta::info target_meta)
  */
 consteval std::meta::info action_value_meta(std::meta::info action_meta)
 {
+    // Invocability queries are a hard error for incomplete types, so guard completeness first.
     if (is_complete_type(action_meta) && is_invocable_type(action_meta, {}))
     {
+        if (action_is_async(action_meta))
+        {
+            return async_proxy_value_meta(remove_cvref(invoke_result(action_meta, {})));
+        }
         return invoke_result(action_meta, {});
     }
     return ^^void;

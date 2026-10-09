@@ -60,6 +60,72 @@ struct RvalueSpreadFn
     }
 };
 
+/// Async proxy deriving from the tag, exposing a `value_type` alias.
+template <class TValue>
+struct MockProxy : fnfelt::monad::io::AsyncProxyTag
+{
+    using value_type = TValue;
+};
+
+/// Base carrying an inherited `value_type` alias.
+template <class TValue>
+struct ProxyAliasBase
+{
+    using value_type = TValue;
+};
+
+/// Async proxy whose `value_type` alias is inherited.
+struct InheritedProxy : ProxyAliasBase<double>, fnfelt::monad::io::AsyncProxyTag
+{
+};
+
+/// Async proxy without a `value_type` alias.
+struct MissingValueProxy : fnfelt::monad::io::AsyncProxyTag
+{
+};
+
+/// Async proxy whose `value_type` alias is void.
+struct VoidValueProxy : fnfelt::monad::io::AsyncProxyTag
+{
+    using value_type = void;
+};
+
+/// Only forward-declared, so a proxy's completeness guard can be exercised.
+struct IncompleteProxy;
+
+/// Action returning an async proxy.
+struct AsyncAction
+{
+    constexpr MockProxy<int> operator()() const
+    {
+        return {};
+    }
+};
+
+/// Action returning a proxy with an inherited `value_type` alias.
+struct InheritedAsyncAction
+{
+    constexpr InheritedProxy operator()() const
+    {
+        return {};
+    }
+};
+
+/// Action returning a tag-deriving proxy without a `value_type` alias.
+struct MissingValueAction
+{
+    constexpr MissingValueProxy operator()() const
+    {
+        return {};
+    }
+};
+
+/// Action declared to return an incomplete proxy; detection must be guarded, not hard-error.
+struct IncompleteReturningAction
+{
+    IncompleteProxy operator()() const;
+};
+
 /// Custom IO name for a custom-traits instantiation.
 inline constexpr char custom_io_name[] = "CustomIO";
 }  // namespace
@@ -227,6 +293,52 @@ TEST_CASE("detail::maybe_io_name names IOs and falls back for non-IOs")
     static_assert(maybe_io_name<^^IO<int (*)()>>() == "IO");
     static_assert(maybe_io_name<^^IO<int (*)(), CustomIOTraits>>() == "CustomIO");
     static_assert(maybe_io_name<^^int>() == "<unknown>");
+}
+
+TEST_CASE("detail::action_value_meta reflects an async proxy's value_type alias")
+{
+    using fnfelt::monad::io::detail::action_value_meta;
+
+    // A tag-deriving proxy's value comes from its `value_type` alias (directly or inherited).
+    static_assert(is_same_type(action_value_meta(^^AsyncAction), ^^int));
+    static_assert(is_same_type(action_value_meta(^^InheritedAsyncAction), ^^double));
+    // A tag-deriving proxy without a value_type alias falls back to void.
+    static_assert(is_same_type(action_value_meta(^^MissingValueAction), ^^void));
+}
+
+TEST_CASE("detail::action_is_async detects tag-deriving invocation results")
+{
+    using fnfelt::monad::io::detail::action_is_async;
+
+    static_assert(action_is_async(^^AsyncAction));
+    static_assert(action_is_async(^^InheritedAsyncAction));
+    // Tag derivation is enough; a missing value_type alias does not affect async detection.
+    static_assert(action_is_async(^^MissingValueAction));
+    // Plain sync actions and non-class results are not async.
+    static_assert(!action_is_async(^^decltype([] { return 1; })));
+    static_assert(!action_is_async(^^int (*)()));
+    // An incomplete invocation result is guarded, not a hard error.
+    static_assert(!action_is_async(^^IncompleteReturningAction));
+}
+
+TEST_CASE("detail::async_proxy_has_value and value_meta walk bases for the value_type alias")
+{
+    using fnfelt::monad::io::detail::async_proxy_has_value;
+    using fnfelt::monad::io::detail::async_proxy_value_meta;
+
+    static_assert(async_proxy_has_value(^^MockProxy<int>));
+    // The alias is inherited, so members_of alone would miss it; bases must be walked.
+    static_assert(async_proxy_has_value(^^InheritedProxy));
+    // A void alias is still an alias, so the proxy has a value (of type void).
+    static_assert(async_proxy_has_value(^^VoidValueProxy));
+    static_assert(!async_proxy_has_value(^^MissingValueProxy));
+    static_assert(!async_proxy_has_value(^^IncompleteProxy));
+    static_assert(!async_proxy_has_value(^^int));
+
+    static_assert(is_same_type(async_proxy_value_meta(^^MockProxy<int>), ^^int));
+    static_assert(is_same_type(async_proxy_value_meta(^^InheritedProxy), ^^double));
+    static_assert(is_same_type(async_proxy_value_meta(^^VoidValueProxy), ^^void));
+    static_assert(is_same_type(async_proxy_value_meta(^^MissingValueProxy), ^^void));
 }
 
 #endif  // DOCTEST_CONFIG_DISABLE

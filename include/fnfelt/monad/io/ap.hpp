@@ -43,6 +43,36 @@ struct ApError
 };
 
 /**
+ * Reflection of the value an ApAction produces when run.
+ *
+ * The function IO's callable is applied to the value IO's value directly when possible, otherwise
+ * the value is spread into the callable (direct invocation wins over spreading), mirroring the
+ * action's dispatch.
+ *
+ * Used as the action's declared return type so that validating the action never instantiates its
+ * body, which would otherwise require copying a move-only nested action for the const receiver.
+ *
+ * @tparam TFnIO IO whose value is a callable.
+ * @tparam TValueIO IO whose value is the callable's argument.
+ * @return Reflection of the value the action produces.
+ */
+template <class TFnIO, class TValueIO>
+consteval std::meta::info ap_result_meta()
+{
+    constexpr std::meta::info fn_value_meta = io_value_meta(^^TFnIO);
+    constexpr std::meta::info value_meta = io_value_meta(^^TValueIO);
+    if constexpr (is_invocable_type(fn_value_meta, {value_meta}))
+    {
+        return invoke_result(fn_value_meta, {value_meta});
+    }
+    if constexpr (is_spread_invocable_as(fn_value_meta, value_meta))
+    {
+        return invoke_result(fn_value_meta, template_arguments_of(dealias(value_meta)));
+    }
+    return ^^void;
+}
+
+/**
  * Action that runs a function IO and a value IO, then applies the function to the value.
  *
  * The function IO is run first to obtain a callable, then the value IO is run to obtain a value,
@@ -59,6 +89,8 @@ struct ApError
 template <class TFnIO, class TValueIO>
 struct ApAction
 {
+    /// Value the action produces when run.
+    using result_type = [:ap_result_meta<TFnIO, TValueIO>():];
     /// IO whose value is a callable.
     TFnIO fn_io;
     /// IO whose value is the callable's argument.
@@ -71,13 +103,13 @@ struct ApAction
      *
      * @return The result of applying the function IO's value to the value IO's value.
      */
-    constexpr auto operator()(this auto && self)
+    constexpr auto operator()(this auto && self) -> result_type
     {
         constexpr std::meta::info fn_value_meta = io_value_meta(^^TFnIO);
         constexpr std::meta::info val_value_meta = io_value_meta(^^TValueIO);
         // The callable and value are moved into local variables before invocation.
-        auto fn = FW(self).fn_io();
-        auto value = FW(self).value_io();
+        auto fn = FW(self).fn_io().sync_wait();
+        auto value = FW(self).value_io().sync_wait();
         if constexpr (is_invocable_type(fn_value_meta, {val_value_meta}))
         {
             return std::invoke(std::move(fn), std::move(value));
