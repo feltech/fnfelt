@@ -58,3 +58,4 @@ endfunction()
 ####################################################################################################
 # Compiler error test packages
 
+add_subdirectory(monad)

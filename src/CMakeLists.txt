@@ -25,7 +25,11 @@ target_sources(
          ${PROJECT_SOURCE_DIR}/include/fnfelt/static_string.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/detail/errors.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/macros_push.hpp
-         ${PROJECT_SOURCE_DIR}/include/fnfelt/macros_pop.hpp)
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/macros_pop.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/fwd.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/traits.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/IO.hpp)
 
 set(_package_config_dir ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME})
 
@@ -67,7 +71,12 @@ target_compile_options(${_lib_target} INTERFACE "$<$<CXX_COMPILER_ID:GNU,Clang>:
 # Doctest test suite.
 
 if(${PROJECT_NAME}_ENABLE_DEV)
-  add_executable(${PROJECT_NAME}.main main.cpp)
+  add_executable(
+    ${PROJECT_NAME}.main
+    main.cpp
+    monad/io/detail.cpp
+    monad/io/traits.cpp
+    monad/io/IO.cpp)
   set(_main_target ${PROJECT_NAME}.main)
   target_link_libraries(${_main_target} PRIVATE doctest::doctest ${PROJECT_NAME}.lib)
   fnfelt_target_linters(${_main_target})
