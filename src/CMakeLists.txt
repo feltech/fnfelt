@@ -24,7 +24,8 @@ target_sources(
          FILES
          ${PROJECT_SOURCE_DIR}/include/fnfelt/static_string.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/macros_push.hpp
-         ${PROJECT_SOURCE_DIR}/include/fnfelt/macros_pop.hpp)
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/macros_pop.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/detail/type_names.hpp)
 
 set(_package_config_dir ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME})
 
