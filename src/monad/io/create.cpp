@@ -9,6 +9,7 @@
 
 #include <memory>
 #include <type_traits>
+#include <utility>
 
 #include <fnfelt/static_string.hpp>
 
@@ -45,21 +46,21 @@ consteval int constexpr_pipeline_named()
 {
     using namespace fnfelt::literals;  // NOLINT
     constexpr auto io = fnfelt::monad::io::create<"X"_ss>([] { return 1; });
-    return io.build();
+    return io.build().sync_wait();
 }
 
 /// Constant-evaluated IO pipeline via the default-traits create overload.
 consteval int constexpr_pipeline_default()
 {
     constexpr auto io = fnfelt::monad::io::create([] { return 1; });
-    return io.build();
+    return io.build().sync_wait();
 }
 
 /// Constant-evaluated IO pipeline via the explicit-traits create overload.
 consteval int constexpr_pipeline_traits()
 {
     constexpr auto io = fnfelt::monad::io::create<CustomIOTraits>([] { return 1; });
-    return io.build();
+    return io.build().sync_wait();
 }
 }  // namespace
 
@@ -72,7 +73,7 @@ TEST_CASE("create with a name wraps the action and names the IO")
     static_assert(std::is_same_v<decltype(io)::action_type, action_t>);
     static_assert(std::is_same_v<decltype(io)::value_type, int>);
     static_assert(decltype(io)::traits::name == "MyIO");
-    CHECK_EQ(io.build(), 1);
+    CHECK_EQ(io.build().sync_wait(), 1);
 }
 
 TEST_CASE("create defaults to traits naming the IO \"IO\"")
@@ -80,7 +81,7 @@ TEST_CASE("create defaults to traits naming the IO \"IO\"")
     auto io = fnfelt::monad::io::create([] { return 2; });
     static_assert(std::is_same_v<decltype(io)::traits, fnfelt::monad::io::CreateIOTraits<>>);
     static_assert(decltype(io)::traits::name == "IO");
-    CHECK_EQ(io.build(), 2);
+    CHECK_EQ(io.build().sync_wait(), 2);
 }
 
 TEST_CASE("create with explicit traits names the IO via the traits")
@@ -90,14 +91,14 @@ TEST_CASE("create with explicit traits names the IO via the traits")
     auto io = fnfelt::monad::io::create<fnfelt::monad::io::CreateIOTraits<"Explicit"_ss>>(
         [] { return 3; });
     static_assert(decltype(io)::traits::name == "Explicit");
-    CHECK_EQ(io.build(), 3);
+    CHECK_EQ(io.build().sync_wait(), 3);
 }
 
 TEST_CASE("create with custom traits uses those traits")
 {
     auto io = fnfelt::monad::io::create<CustomIOTraits>([] { return 4; });
     static_assert(std::is_same_v<decltype(io)::traits, CustomIOTraits>);
-    CHECK_EQ(io.build(), 4);
+    CHECK_EQ(io.build().sync_wait(), 4);
 }
 
 TEST_CASE("create decays function lvalues to function pointers")
@@ -106,12 +107,12 @@ TEST_CASE("create decays function lvalues to function pointers")
 
     auto io = fnfelt::monad::io::create<"Ptr"_ss>(free_action);
     static_assert(std::is_same_v<decltype(io)::action_type, int (*)()>);
-    CHECK_EQ(io.build(), 42);
+    CHECK_EQ(io.build().sync_wait(), 42);
 
     // The function-pointer form of the same free function is also accepted.
     auto io_ptr = fnfelt::monad::io::create<"Ptr"_ss>(&free_action);
     static_assert(std::is_same_v<decltype(io_ptr)::action_type, int (*)()>);
-    CHECK_EQ(io_ptr.build(), 42);
+    CHECK_EQ(io_ptr.build().sync_wait(), 42);
 }
 
 TEST_CASE("create copies lvalue actions and moves rvalue actions")
@@ -120,12 +121,12 @@ TEST_CASE("create copies lvalue actions and moves rvalue actions")
 
     auto l = [] { return 5; };
     auto copied = fnfelt::monad::io::create<"L"_ss>(l);
-    CHECK_EQ(copied.build(), 5);
+    CHECK_EQ(copied.build().sync_wait(), 5);
     // The lvalue is untouched, so it remains usable.
     CHECK_EQ(l(), 5);
 
     auto moved = fnfelt::monad::io::create<"M"_ss>(MoveOnlyAction{});
-    CHECK_EQ(moved.build(), 11);
+    CHECK_EQ(std::move(moved).build().sync_wait(), 11);
     static_assert(!std::is_copy_constructible_v<decltype(moved)>);
 }
 

@@ -26,10 +26,8 @@ namespace fnfelt::monad::io
 // declaration plus the pragma-once guards.
 template <class TAction, class TTraits>
 class IO;
-/// @endcond
 }  // namespace fnfelt::monad::io
 
-/// @cond
 namespace fnfelt::monad::io
 {
 namespace detail
@@ -38,6 +36,26 @@ namespace detail
 inline constexpr char default_io_name[] = "IO";
 }  // namespace detail
 
+/// @endcond
+/**
+ * Canonical tag marking an IO action as asynchronous.
+ *
+ * An action is detected as asynchronous when its invocation result derives from this tag and the
+ * result exposes a `value_type` alias naming the asynchronous result type. User-defined async
+ * proxies derive from it.
+ *
+ * Detection (tag plus `value_type`) determines IO typing, but acceptance by the default traits as
+ * an executable IO is a stronger contract: the proxy must also follow the execution protocol.
+ * Arguments are stored in a public member named `arg` whose type is a `std::tuple`
+ * specialisation, and are spread into a stateless static entry `fn`, invoked as `fn(self, args...)`
+ * and returning an `lf::task`. Custom traits may relax this by overriding `validate_async_proxy`
+ * (see CreateIOTraits).
+ */
+struct AsyncProxyTag
+{
+};
+
+/// @cond
 /// Traits validating an IO's action, naming the instantiation used in diagnostics.
 template <char const * name_cstr = detail::default_io_name>
 struct CreateIOTraits;
@@ -60,6 +78,10 @@ struct ApIOTraits;
 
 template <class TAction, class TTraits = CreateIOTraits<>>
 class IO;
+
+/// Run proxy returned by IO's call operator, defined in async.hpp.
+template <class TAction>
+struct RunProxy;
 
 // Forward declarations for the free create factory functions; defined and documented in
 // create.hpp. The action is taken by forwarding reference so lvalues are copied and rvalues are

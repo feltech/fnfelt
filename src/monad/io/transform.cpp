@@ -93,7 +93,7 @@ consteval int constexpr_pipeline_transform()
 {
     constexpr auto transformed =
         fnfelt::monad::io::create([] { return 1; }).transform([](int x) { return x + 1; });
-    return transformed.build();
+    return transformed.build().sync_wait();
 }
 
 /// Constant-evaluated IO pipeline transforming via the named member overload.
@@ -103,7 +103,7 @@ consteval int constexpr_pipeline_transform_named()
     constexpr auto transformed =
         fnfelt::monad::io::create([] { return 1; })
             .template transform<"Named transform"_ss>([](int x) { return x + 1; });
-    return transformed.build();
+    return transformed.build().sync_wait();
 }
 
 /// Constant-evaluated IO pipeline transforming via the explicit-traits member overload.
@@ -112,7 +112,7 @@ consteval int constexpr_pipeline_transform_traits()
     constexpr auto transformed =
         fnfelt::monad::io::create([] { return 1; })
             .template transform<CustomIOTraits>([](int x) { return x + 1; });
-    return transformed.build();
+    return transformed.build().sync_wait();
 }
 
 /// Constant-evaluated IO pipeline transforming via the free transform function.
@@ -120,7 +120,7 @@ consteval int constexpr_pipeline_transform_free()
 {
     constexpr auto transformed = fnfelt::monad::io::transform(
         fnfelt::monad::io::create([] { return 1; }), [](int x) { return x + 1; });
-    return transformed.build();
+    return transformed.build().sync_wait();
 }
 
 /// Constant-evaluated IO pipeline transforming via the free named transform function.
@@ -129,7 +129,7 @@ consteval int constexpr_pipeline_transform_free_named()
     using namespace fnfelt::literals;  // NOLINT
     constexpr auto transformed = fnfelt::monad::io::transform<"Named free transform"_ss>(
         fnfelt::monad::io::create([] { return 1; }), [](int x) { return x + 1; });
-    return transformed.build();
+    return transformed.build().sync_wait();
 }
 
 /// Constant-evaluated IO pipeline transforming via the free explicit-traits transform function.
@@ -137,7 +137,7 @@ consteval int constexpr_pipeline_transform_free_traits()
 {
     constexpr auto transformed = fnfelt::monad::io::transform<CustomIOTraits>(
         fnfelt::monad::io::create([] { return 1; }), [](int x) { return x + 1; });
-    return transformed.build();
+    return transformed.build().sync_wait();
 }
 
 /// Constant-evaluated IO pipeline spreading a pair value into the transformer.
@@ -145,7 +145,7 @@ consteval int constexpr_pipeline_spread()
 {
     constexpr auto transformed = fnfelt::monad::io::create([] { return std::pair{1, 2}; })
                                      .transform([](int x, int y) { return x + y; });
-    return transformed.build();
+    return transformed.build().sync_wait();
 }
 
 /// Constant-evaluated IO pipeline composing transform with a subsequent and_then.
@@ -155,7 +155,7 @@ consteval int constexpr_pipeline_transform_and_then()
         fnfelt::monad::io::create([] { return 1; })
             .transform([](int x) { return x + 1; })
             .and_then([](int x) { return fnfelt::monad::io::create([x] { return x * 10; }); });
-    return bound.build();
+    return bound.build().sync_wait();
 }
 
 /// Constant-evaluated IO pipeline composing and_then with a subsequent transform.
@@ -165,7 +165,7 @@ consteval int constexpr_pipeline_and_then_transform()
         fnfelt::monad::io::create([] { return 1; })
             .and_then([](int x) { return fnfelt::monad::io::create([x] { return x + 1; }); })
             .transform([](int x) { return x * 10; });
-    return bound.build();
+    return bound.build().sync_wait();
 }
 
 /// Constant-evaluated IO pipeline composing transform with a subsequent ap.
@@ -174,7 +174,7 @@ consteval int constexpr_pipeline_transform_ap()
     constexpr auto applied = fnfelt::monad::io::ap(
         fnfelt::monad::io::create([] { return [](int x) { return x * 10; }; }),
         fnfelt::monad::io::create([] { return 2; }).transform([](int x) { return x + 1; }));
-    return applied.build();
+    return applied.build().sync_wait();
 }
 
 /// Constant-evaluated IO pipeline composing ap with a subsequent transform.
@@ -185,7 +185,7 @@ consteval int constexpr_pipeline_ap_transform()
             fnfelt::monad::io::create([] { return [](int x) { return x * 10; }; }),
             fnfelt::monad::io::create([] { return 2; }))
             .transform([](int x) { return x + 1; });
-    return applied.build();
+    return applied.build().sync_wait();
 }
 }  // namespace
 
@@ -195,7 +195,7 @@ TEST_CASE("IO transform applies a direct transformer to the source's value")
 
     auto const transformed =
         fnfelt::monad::io::create([] { return 1; }).transform([](int x) { return x + 1; });
-    CHECK_EQ(transformed.build(), 2);
+    CHECK_EQ(transformed.build().sync_wait(), 2);
 }
 
 TEST_CASE("IO transform spreads pair and tuple values into the transformer")
@@ -204,11 +204,11 @@ TEST_CASE("IO transform spreads pair and tuple values into the transformer")
 
     auto const transformed_pair = fnfelt::monad::io::create([] { return std::pair{1, 2}; })
                                       .transform([](int x, int y) { return x + y; });
-    CHECK_EQ(transformed_pair.build(), 3);
+    CHECK_EQ(transformed_pair.build().sync_wait(), 3);
 
     auto const transformed_tuple = fnfelt::monad::io::create([] { return std::tuple{3, 4}; })
                                        .transform([](int x, int y) { return x * y; });
-    CHECK_EQ(transformed_tuple.build(), 12);
+    CHECK_EQ(transformed_tuple.build().sync_wait(), 12);
 }
 
 TEST_CASE("IO transform prefers direct invocation over spreading")
@@ -220,12 +220,12 @@ TEST_CASE("IO transform prefers direct invocation over spreading")
     auto const transformed = fnfelt::monad::io::create([] { return std::pair{1, 2}; })
                                  .transform([](std::pair<int, int> pair_value)
                                             { return pair_value.first * 10 + pair_value.second; });
-    CHECK_EQ(transformed.build(), 12);
+    CHECK_EQ(transformed.build().sync_wait(), 12);
 
     // An overloaded functor pins precedence at runtime: the pair-taking overload must win.
     auto const overloaded = fnfelt::monad::io::create([] { return std::pair{1, 2}; })
                                 .transform(OverloadedTransformer{});
-    CHECK_EQ(overloaded.build(), 12);
+    CHECK_EQ(overloaded.build().sync_wait(), 12);
 }
 
 TEST_CASE("IO transform invokes the transformer as an rvalue")
@@ -252,8 +252,7 @@ TEST_CASE("IO transform invokes the transformer as an rvalue")
         fnfelt::monad::io::create([] { return 1; }).transform(RefQualifiedTransformer{});
     // NOLINTNEXTLINE(runtime/int): the `&&` overload returns the fundamental `long`.
     static_assert(std::is_same_v<decltype(transformed)::value_type, long>);
-    // Run the composition as an rvalue so the driver selects the transformer's `&&` overload.
-    CHECK_EQ(std::move(transformed).build(), 2L);
+    CHECK_EQ(transformed.build().sync_wait(), 2L);
 }
 
 TEST_CASE("IO transform rejects a transformer callable only as a const lvalue")
@@ -284,7 +283,7 @@ TEST_CASE("IO transform chains through successive transformers")
     auto const transformed = fnfelt::monad::io::create([] { return 1; })
                                  .transform([](int x) { return x + 1; })
                                  .transform([](int x) { return x * 10; });
-    CHECK_EQ(transformed.build(), 20);
+    CHECK_EQ(transformed.build().sync_wait(), 20);
 }
 
 TEST_CASE("IO transform accepts an lvalue transformer and copies it")
@@ -306,7 +305,7 @@ TEST_CASE("IO transform accepts an lvalue transformer and copies it")
     IdentityTransformer transformer_lvalue{10};
     auto const transformed =
         fnfelt::monad::io::create([] { return 1; }).transform(transformer_lvalue);
-    CHECK_EQ(transformed.build(), 11);
+    CHECK_EQ(transformed.build().sync_wait(), 11);
 
     // The lvalue is untouched, so it remains usable.
     CHECK_EQ(transformer_lvalue(2), 12);
@@ -317,8 +316,8 @@ TEST_CASE("IO transform works on a const IO and with a move-only transformer")
     using fnfelt::monad::io::IO;
 
     auto const source = fnfelt::monad::io::create([] { return 5; });
-    auto const transformed = source.transform(MoveOnlyTransformer{});
-    CHECK_EQ(transformed.build(), 7);
+    auto transformed = source.transform(MoveOnlyTransformer{});
+    CHECK_EQ(std::move(transformed).build().sync_wait(), 7);
 }
 
 TEST_CASE("IO with custom traits transforms and runs end-to-end")
@@ -329,7 +328,7 @@ TEST_CASE("IO with custom traits transforms and runs end-to-end")
     auto const transformed =
         source.template transform<DelegatingTransformTraits>([](int x) { return x + 1; });
     static_assert(std::is_same_v<decltype(transformed)::traits, DelegatingTransformTraits>);
-    CHECK_EQ(transformed.build(), 2);
+    CHECK_EQ(transformed.build().sync_wait(), 2);
 }
 
 TEST_CASE("transform member defaults to TransformIOTraits for the result")
@@ -342,7 +341,7 @@ TEST_CASE("transform member defaults to TransformIOTraits for the result")
     auto const source = fnfelt::monad::io::create([] { return 1; });
     auto const transformed = source.transform([](int x) { return x + 1; });
     static_assert(std::is_same_v<decltype(transformed)::traits, TransformIOTraits>);
-    CHECK_EQ(transformed.build(), 2);
+    CHECK_EQ(transformed.build().sync_wait(), 2);
 }
 
 TEST_CASE("transform member with explicit traits uses those traits for the result")
@@ -352,7 +351,7 @@ TEST_CASE("transform member with explicit traits uses those traits for the resul
     auto const source = fnfelt::monad::io::create([] { return 1; });
     auto const transformed = source.template transform<CustomIOTraits>([](int x) { return x + 1; });
     static_assert(std::is_same_v<decltype(transformed)::traits, CustomIOTraits>);
-    CHECK_EQ(transformed.build(), 2);
+    CHECK_EQ(transformed.build().sync_wait(), 2);
 }
 
 TEST_CASE("transform member with a name names the result")
@@ -366,7 +365,7 @@ TEST_CASE("transform member with a name names the result")
     // NOLINTNEXTLINE(build/include_what_you_use)
     auto const transformed = source.template transform<"Named transform"_ss>(plus_one);
     static_assert(decltype(transformed)::traits::name == "Named transform");
-    CHECK_EQ(transformed.build(), 2);
+    CHECK_EQ(transformed.build().sync_wait(), 2);
 }
 
 TEST_CASE("free transform uses the default, named and explicit-traits forms")
@@ -378,17 +377,17 @@ TEST_CASE("free transform uses the default, named and explicit-traits forms")
     auto const source = fnfelt::monad::io::create<CustomIOTraits>([] { return 1; });
     auto const transformed = fnfelt::monad::io::transform(source, [](int x) { return x + 1; });
     static_assert(std::is_same_v<decltype(transformed)::traits, TransformIOTraits>);
-    CHECK_EQ(transformed.build(), 2);
+    CHECK_EQ(transformed.build().sync_wait(), 2);
 
     auto const named = fnfelt::monad::io::transform<"Named free transform"_ss>(
         source, [](int x) { return x + 1; });
     static_assert(decltype(named)::traits::name == "Named free transform");
-    CHECK_EQ(named.build(), 2);
+    CHECK_EQ(named.build().sync_wait(), 2);
 
     auto const trait_bound =
         fnfelt::monad::io::transform<CustomIOTraits>(source, [](int x) { return x + 1; });
     static_assert(std::is_same_v<decltype(trait_bound)::traits, CustomIOTraits>);
-    CHECK_EQ(trait_bound.build(), 2);
+    CHECK_EQ(trait_bound.build().sync_wait(), 2);
 }
 
 TEST_CASE("transform composes with and_then and ap in both directions")
@@ -401,26 +400,26 @@ TEST_CASE("transform composes with and_then and ap in both directions")
         create([] { return 1; })
             .transform([](int x) { return x + 1; })
             .and_then([](int x) { return create([x] { return x * 10; }); });
-    CHECK_EQ(transform_then_and_then.build(), 20);
+    CHECK_EQ(transform_then_and_then.build().sync_wait(), 20);
 
     // and_then then transform: (1 + 1) * 10.
     auto const and_then_then_transform =
         create([] { return 1; })
             .and_then([](int x) { return create([x] { return x + 1; }); })
             .transform([](int x) { return x * 10; });
-    CHECK_EQ(and_then_then_transform.build(), 20);
+    CHECK_EQ(and_then_then_transform.build().sync_wait(), 20);
 
     // transform then ap: (2 + 1) * 10.
     auto const transform_then_ap =
         ap(create([] { return [](int x) { return x * 10; }; }),
            create([] { return 2; }).transform([](int x) { return x + 1; }));
-    CHECK_EQ(transform_then_ap.build(), 30);
+    CHECK_EQ(transform_then_ap.build().sync_wait(), 30);
 
     // ap then transform: (2 * 10) + 1.
     auto const ap_then_transform =
         ap(create([] { return [](int x) { return x * 10; }; }), create([] { return 2; }))
             .transform([](int x) { return x + 1; });
-    CHECK_EQ(ap_then_transform.build(), 21);
+    CHECK_EQ(ap_then_transform.build().sync_wait(), 21);
 }
 
 TEST_CASE("transform produces IOs usable in a constexpr pipeline")
@@ -446,38 +445,40 @@ TEST_CASE("transform moves a move-only rvalue source through a chain without cop
     // A move-only source cannot be copied, so it must be moved into the TransformAction member. The
     // action is move-only, hence so is the resulting IO.
     MoveTrackingAction::moves = 0;
-    auto const bound = IO<MoveTrackingAction, TransformIOTraits<>>{MoveTrackingAction{}}.transform(
+    auto bound = IO<MoveTrackingAction, TransformIOTraits<>>{MoveTrackingAction{}}.transform(
         [](int x) { return x + 1; });
-    CHECK_EQ(bound.build(), 2);
+    CHECK_EQ(std::move(bound).build().sync_wait(), 2);
     static_assert(!std::is_copy_constructible_v<decltype(bound)>);
-    // Three moves: the temporary action into the source IO's action member; the source IO into the
-    // TransformAction's source member (the forwarding reference's forwarding); and the
-    // TransformAction into the returned IO's action member. The rvalue temporary is elided into the
-    // IO constructor's by-value parameter, so it costs no extra move.
-    CHECK_EQ(MoveTrackingAction::moves, 3);
+    // Five moves. Construction: the temporary action into the source IO's action member; the source
+    // IO into the TransformAction's source member; and the TransformAction into the returned IO's
+    // action member (three). Running: the IO's action into the RunProxy by value; and the nested
+    // source IO into its own RunProxy when the TransformAction runs (two). The rvalue temporary is
+    // elided into the IO constructor's by-value parameter, so it costs no extra move.
+    CHECK_EQ(MoveTrackingAction::moves, 5);
 
     // Each further hop moves the whole nested source IO once into the new TransformAction member
     // and the new TransformAction once into the returned IO's action member, so the two-hop chain
-    // costs two more moves than the one-hop chain.
+    // costs two more moves than the one-hop chain to construct. Running adds one more nested
+    // source-IO move for the extra hop, so eight in total.
     MoveTrackingAction::moves = 0;
-    auto const chained = IO<MoveTrackingAction, TransformIOTraits<>>{MoveTrackingAction{}}
-                             .transform([](int x) { return x + 1; })
-                             .transform([](int x) { return x * 10; });
-    CHECK_EQ(chained.build(), 20);
+    auto chained = IO<MoveTrackingAction, TransformIOTraits<>>{MoveTrackingAction{}}
+                       .transform([](int x) { return x + 1; })
+                       .transform([](int x) { return x * 10; });
+    CHECK_EQ(std::move(chained).build().sync_wait(), 20);
     static_assert(!std::is_copy_constructible_v<decltype(chained)>);
-    CHECK_EQ(MoveTrackingAction::moves, 5);
+    CHECK_EQ(MoveTrackingAction::moves, 8);
 
     // The free function is a forwarding reference too, so a directly-passed prvalue rvalue source
     // costs the same as the member form (the temporary is direct-initialised into the stored
     // action). Pinned here so a regression to a by-value source parameter would show up for the
     // move-only case.
     MoveTrackingAction::moves = 0;
-    auto const free_bound = fnfelt::monad::io::transform(
+    auto free_bound = fnfelt::monad::io::transform(
         IO<MoveTrackingAction, TransformIOTraits<>>{MoveTrackingAction{}},
         [](int x) { return x + 1; });
-    CHECK_EQ(free_bound.build(), 2);
+    CHECK_EQ(std::move(free_bound).build().sync_wait(), 2);
     static_assert(!std::is_copy_constructible_v<decltype(free_bound)>);
-    CHECK_EQ(MoveTrackingAction::moves, 3);
+    CHECK_EQ(MoveTrackingAction::moves, 5);
 }
 
 TEST_CASE("transform copies an lvalue IO source, leaving the caller's IO usable")
@@ -487,8 +488,8 @@ TEST_CASE("transform copies an lvalue IO source, leaving the caller's IO usable"
     // A copyable action so the lvalue source can be copied; the caller's IO must be untouched.
     auto const source = fnfelt::monad::io::create([] { return 1; });
     auto const transformed = fnfelt::monad::io::transform(source, [](int x) { return x + 1; });
-    CHECK_EQ(transformed.build(), 2);
-    CHECK_EQ(source.build(), 1);
+    CHECK_EQ(transformed.build().sync_wait(), 2);
+    CHECK_EQ(source.build().sync_wait(), 1);
 }
 
 namespace transform_error_msg_test

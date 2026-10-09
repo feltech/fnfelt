@@ -65,17 +65,25 @@ consteval void append_string_view(std::string & target, std::string_view view)
 /**
  * Reflection of the value an action produces when run.
  *
- * Incomplete actions (or non-callable types) have no meaningful result, but invocability queries
- * are a hard error for incomplete types, so `void` is returned as a placeholder in that case.
+ * An asynchronous action's value comes from its proxy's `value_type` alias.
+ *
+ * Inputs may be pre-validation, so `void` is the diagnostic placeholder: it keeps an invalid
+ * instantiation well-formed while the companion validator's static_assert remains the single,
+ * friendly error. Validated inputs never observe the placeholder.
  *
  * @param action_meta Reflection of the action type.
- * @return Reflection of the action's invocation result, or `void` if the action is incomplete or
- * not callable with no arguments.
+ * @return Reflection of the action's invocation result, or `void` if the action is incomplete, not
+ * callable with no arguments, or an async proxy without a usable `value_type` alias.
  */
 consteval std::meta::info action_value_meta(std::meta::info action_meta)
 {
+    // Invocability queries are a hard error for incomplete types, so guard completeness first.
     if (is_complete_type(action_meta) && is_invocable_type(action_meta, {}))
     {
+        if (action_is_async(action_meta))
+        {
+            return async_proxy_value_meta(remove_cvref(invoke_result(action_meta, {})));
+        }
         return invoke_result(action_meta, {});
     }
     return ^^void;
@@ -85,7 +93,8 @@ consteval std::meta::info action_value_meta(std::meta::info action_meta)
  * Reflection of the action type wrapped by an IO.
  *
  * @param io_meta Reflection of the (possibly IO) type.
- * @return Reflection of the wrapped action, or `void` if the type is not an IO.
+ * @return Reflection of the wrapped action, or `void` if the type is not an IO. The `void` is the
+ * diagnostic placeholder described on `action_value_meta`.
  */
 consteval std::meta::info io_action_meta(std::meta::info io_meta)
 {

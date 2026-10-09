@@ -57,31 +57,31 @@ consteval int constexpr_pipeline_named()
 {
     using namespace fnfelt::literals;  // NOLINT
     constexpr auto io = fnfelt::monad::io::just<"X"_ss>(1);
-    return io.build();
+    return io.build().sync_wait();
 }
 
 /// Constant-evaluated IO pipeline via the default-traits just overload.
 consteval int constexpr_pipeline_default()
 {
     constexpr auto io = fnfelt::monad::io::just(1);
-    return io.build();
+    return io.build().sync_wait();
 }
 
 /// Constant-evaluated IO pipeline via the explicit-traits just overload.
 consteval int constexpr_pipeline_traits()
 {
     constexpr auto io = fnfelt::monad::io::just<CustomIOTraits>(1);
-    return io.build();
+    return io.build().sync_wait();
 }
 
 /// Constant-evaluated rvalue run: the stored value is moved out of the IO.
 consteval int constexpr_pipeline_rvalue()
 {
     auto just_io = fnfelt::monad::io::just<CustomIOTraits>(Observable{11});
-    auto const result = std::move(just_io).build();
-    // One move lifts the value into the action, one moves the action into the IO, and one moves
-    // the stored value out of the IO into the result; nothing is copied.
-    if (result.copies == 0 && result.moves == 3)
+    auto const result = std::move(just_io).build().sync_wait();
+    // One move lifts the value into the action, one moves the action into the IO, one moves the
+    // action out of the IO, and one moves the value out of the run proxy; nothing is copied.
+    if (result.copies == 0 && result.moves == 4)
     {
         return result.value;
     }
@@ -131,7 +131,7 @@ TEST_CASE("just with a name lifts the value and names the IO")
     auto io = fnfelt::monad::io::just<"MyIO"_ss>(1);
     static_assert(std::is_same_v<decltype(io)::value_type, int>);
     static_assert(decltype(io)::traits::name == "MyIO");
-    CHECK_EQ(io.build(), 1);
+    CHECK_EQ(io.build().sync_wait(), 1);
 }
 
 TEST_CASE("just defaults to traits naming the IO \"IO\"")
@@ -139,7 +139,7 @@ TEST_CASE("just defaults to traits naming the IO \"IO\"")
     auto io = fnfelt::monad::io::just(2);
     static_assert(std::is_same_v<decltype(io)::traits, fnfelt::monad::io::JustIOTraits<>>);
     static_assert(decltype(io)::traits::name == "IO");
-    CHECK_EQ(io.build(), 2);
+    CHECK_EQ(io.build().sync_wait(), 2);
 }
 
 TEST_CASE("just with explicit JustIOTraits names the IO via the traits")
@@ -148,14 +148,14 @@ TEST_CASE("just with explicit JustIOTraits names the IO via the traits")
 
     auto io = fnfelt::monad::io::just<fnfelt::monad::io::JustIOTraits<"Explicit"_ss>>(3);
     static_assert(decltype(io)::traits::name == "Explicit");
-    CHECK_EQ(io.build(), 3);
+    CHECK_EQ(io.build().sync_wait(), 3);
 }
 
 TEST_CASE("just with custom traits uses those traits")
 {
     auto io = fnfelt::monad::io::just<CustomIOTraits>(4);
     static_assert(std::is_same_v<decltype(io)::traits, CustomIOTraits>);
-    CHECK_EQ(io.build(), 4);
+    CHECK_EQ(io.build().sync_wait(), 4);
 }
 
 TEST_CASE("just decays and copies lvalues, leaving the source usable")
@@ -168,12 +168,12 @@ TEST_CASE("just decays and copies lvalues, leaving the source usable")
     // The lvalue is copied into the action and the source is untouched.
     CHECK_FALSE(source.is_moved_from);
     CHECK_EQ(source.value, 5);
-    // The value is copied into the action, moved into the IO, and copied out of the IO into the
-    // result: two copies and one move.
-    auto result = io.build();
+    // The value is copied into the action, moved into the IO, copied out of the IO into the run
+    // proxy, and moved into the result: two copies and two moves.
+    auto result = io.build().sync_wait();
     CHECK_EQ(result.value, 5);
     CHECK_EQ(result.copies, 2);
-    CHECK_EQ(result.moves, 1);
+    CHECK_EQ(result.moves, 2);
     CHECK_FALSE(result.is_moved_from);
     CHECK_FALSE(source.is_moved_from);
     CHECK_EQ(source.value, 5);
@@ -188,19 +188,19 @@ TEST_CASE("just moves rvalues into the stored value, which lvalue runs copy out 
     // The rvalue is moved into the action and the IO constructor moves the action into its
     // member: two moves and no copies.
     CHECK(source.is_moved_from);
-    // Each lvalue run then copies the stored value out of the IO into the result, so each result
-    // carries two input moves plus one copy per run.
-    auto first = io.build();
+    // Each lvalue run then copies the stored value out of the IO and moves it into the result, so
+    // each result carries two input moves plus one copy and one move per run.
+    auto first = io.build().sync_wait();
     CHECK_EQ(first.value, 7);
     CHECK_EQ(first.copies, 1);
-    CHECK_EQ(first.moves, 2);
+    CHECK_EQ(first.moves, 3);
     CHECK_FALSE(first.is_moved_from);
     // The second run still sees the intact stored value: it would be poisoned if the first
     // run had consumed it.
-    auto second = io.build();
+    auto second = io.build().sync_wait();
     CHECK_EQ(second.value, 7);
     CHECK_EQ(second.copies, 1);
-    CHECK_EQ(second.moves, 2);
+    CHECK_EQ(second.moves, 3);
 }
 
 TEST_CASE("const lvalue runs copy the stored value out, leaving the IO runnable")
@@ -211,15 +211,15 @@ TEST_CASE("const lvalue runs copy the stored value out, leaving the IO runnable"
     auto const & const_io = io;
     // The rvalue is moved into the action and the IO constructor moves the action into its
     // member: two moves and no copies. A const lvalue run copies the stored value out, exactly
-    // like a mutable lvalue run, giving one copy and two moves per result.
-    auto first = const_io.build();
+    // like a mutable lvalue run, giving one copy and three moves per result.
+    auto first = const_io.build().sync_wait();
     CHECK_EQ(first.value, 9);
     CHECK_EQ(first.copies, 1);
-    CHECK_EQ(first.moves, 2);
-    auto second = const_io.build();
+    CHECK_EQ(first.moves, 3);
+    auto second = const_io.build().sync_wait();
     CHECK_EQ(second.value, 9);
     CHECK_EQ(second.copies, 1);
-    CHECK_EQ(second.moves, 2);
+    CHECK_EQ(second.moves, 3);
 }
 
 TEST_CASE("rvalue runs move the stored value out, consuming the IO")
@@ -228,20 +228,20 @@ TEST_CASE("rvalue runs move the stored value out, consuming the IO")
 
     auto just_io = fnfelt::monad::io::just<"Rvalue"_ss>(Observable{9});
     // The rvalue is moved into the action, the IO constructor moves the action into its member,
-    // and the rvalue run moves the stored value out of the IO into the result: three moves and
-    // no copies.
-    auto first = std::move(just_io).build();
+    // the rvalue run moves the action out of the IO into the proxy, and the stored value is moved
+    // out of the proxy into the result: four moves and no copies.
+    auto first = std::move(just_io).build().sync_wait();
     CHECK_EQ(first.value, 9);
     CHECK_EQ(first.copies, 0);
-    CHECK_EQ(first.moves, 3);
+    CHECK_EQ(first.moves, 4);
     CHECK_FALSE(first.is_moved_from);
     // The consumed IO's stored value was poisoned by the move, so the lvalue run copies that
-    // moved-from value out of the IO into the result: one copy on top of the two construction
-    // moves.
-    auto second = just_io.build();
+    // moved-from value out of the IO and moves it into the result: one copy on top of the two
+    // construction moves.
+    auto second = just_io.build().sync_wait();
     CHECK_EQ(second.value, -1);
     CHECK_EQ(second.copies, 1);
-    CHECK_EQ(second.moves, 2);
+    CHECK_EQ(second.moves, 3);
 }
 
 TEST_CASE("just produces IOs usable in a constexpr pipeline")
@@ -257,7 +257,7 @@ TEST_CASE("just with delegating traits validates through the traits and runs")
     auto io = fnfelt::monad::io::just<DelegatingJustTraits>(5);
     static_assert(std::is_same_v<decltype(io)::traits, DelegatingJustTraits>);
     static_assert(decltype(io)::traits::name == "DelegatingJustIO");
-    CHECK_EQ(io.build(), 5);
+    CHECK_EQ(io.build().sync_wait(), 5);
 }
 
 TEST_CASE("just with relaxed custom traits accepts a move-only value")
@@ -268,7 +268,7 @@ TEST_CASE("just with relaxed custom traits accepts a move-only value")
     auto just_io = fnfelt::monad::io::just<RelaxedTraits>(std::make_unique<int>(13));
     static_assert(std::is_same_v<decltype(just_io)::value_type, std::unique_ptr<int>>);
     // A move-only value can only be consumed by an rvalue run; a const/lvalue run would copy it.
-    auto const result = std::move(just_io).build();
+    auto const result = std::move(just_io).build().sync_wait();
     CHECK_EQ(*result, 13);
 }
 

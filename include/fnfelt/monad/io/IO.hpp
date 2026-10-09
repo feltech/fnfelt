@@ -13,6 +13,7 @@
 #include <type_traits>
 #include <utility>
 
+#include <fnfelt/monad/io/async.hpp>
 #include <fnfelt/monad/io/detail.hpp>
 
 #include <fnfelt/macros_push.hpp>
@@ -22,7 +23,11 @@ namespace fnfelt::monad::io
 /**
  * IO monad for wrapping side-effecting actions.
  *
- * @tparam TAction Callable action. Must take no arguments and return a value.
+ * Call `io.build().sync_wait()` to run an IO; `build` yields a @ref RunProxy rather than
+ * running the action directly.
+ *
+ * @tparam TAction Callable action. Must take no arguments and return a value, or an async proxy
+ * deriving AsyncProxyTag that exposes a `value_type` alias naming its result type.
  * @tparam TTraits Traits type stored by the monad. Not used by IO itself.
  */
 template <class TAction, class TTraits>
@@ -56,14 +61,17 @@ public:
     }
 
     /**
-     * Run the wrapped action and return its value.
+     * Yield a run proxy holding this IO's action by value.
      *
-     * @param self The IO instance to run (explicit object parameter).
-     * @return The value the action produces.
+     * Calling `sync_wait` on the returned proxy is the only execution path. The action is moved out
+     * of an rvalue IO and copied out of an lvalue IO.
+     *
+     * @param self The IO instance (explicit object parameter).
+     * @return RunProxy holding the wrapped action by value.
      */
-    constexpr auto build(this auto && self)
+    [[nodiscard]] constexpr RunProxy<action_type> build(this auto && self)
     {
-        return FW(self).action_();
+        return RunProxy<action_type>{FW(self).action_};
     }
 
     /**

@@ -233,6 +233,160 @@ constexpr auto void_fn_action = [] { return [](int) {}; };
 /// Action returning a callable taking two ints and returning void - spread-fed but must fail ap.
 constexpr auto two_arg_void_fn_action = [] { return [](int, int) {}; };
 
+/// Stateless coroutine entry for the executable test proxies; produces its stored argument.
+template <class TValue>
+struct EchoFn
+{
+    auto operator()(auto /*self*/, TValue value) const -> lf::task<TValue>
+    {
+        co_return value;
+    }
+};
+
+/// Async proxy deriving from the tag, exposing a `value_type` alias and the executable protocol.
+template <class TValue>
+struct AsyncProxy : fnfelt::monad::io::AsyncProxyTag
+{
+    using value_type = TValue;
+    std::tuple<TValue> arg;
+    static constexpr EchoFn<TValue> fn{};
+};
+
+/// Action returning a valid async proxy.
+struct AsyncAction
+{
+    constexpr AsyncProxy<int> operator()() const
+    {
+        return {};
+    }
+};
+
+/// Async proxy without a `value_type` alias - must fail action validation.
+struct MissingValueProxy : fnfelt::monad::io::AsyncProxyTag
+{
+};
+
+/// Action returning an async proxy without a `value_type` alias.
+struct MissingValueAction
+{
+    constexpr MissingValueProxy operator()() const
+    {
+        return {};
+    }
+};
+
+/// Async proxy whose `value_type` alias is void - must fail action validation.
+struct VoidValueProxy : fnfelt::monad::io::AsyncProxyTag
+{
+    using value_type = void;
+};
+
+/// Action returning an async proxy whose `value_type` alias is void.
+struct VoidValueAction
+{
+    constexpr VoidValueProxy operator()() const
+    {
+        return {};
+    }
+};
+
+/// Action returning a reference to a valid async proxy - must fail action validation.
+struct ReferenceAsyncAction
+{
+    AsyncProxy<int> & operator()() const
+    {
+        static AsyncProxy<int> proxy;
+        return proxy;
+    }
+};
+
+/// First base carrying an inherited `value_type` alias, for ambiguity checks.
+template <class TValue>
+struct AliasBaseA
+{
+    using value_type = TValue;
+};
+
+/// Second base carrying an inherited `value_type` alias, for ambiguity checks.
+template <class TValue>
+struct AliasBaseB
+{
+    using value_type = TValue;
+};
+
+/// Proxy inheriting identical `value_type` aliases - not ambiguous, and executable.
+struct SameAliasProxy : AliasBaseA<int>, AliasBaseB<int>, fnfelt::monad::io::AsyncProxyTag
+{
+    std::tuple<int> arg;
+    static constexpr EchoFn<int> fn{};
+};
+
+/// Proxy inheriting differing `value_type` aliases - must fail validation.
+struct AmbiguousProxy : AliasBaseA<int>, AliasBaseB<double>, fnfelt::monad::io::AsyncProxyTag
+{
+};
+
+/// Proxy without the stored `arg` member - must fail validation.
+struct MissingArgProxy : fnfelt::monad::io::AsyncProxyTag
+{
+    using value_type = int;
+};
+
+/// Proxy whose `arg` member is not a `std::tuple` - must fail validation.
+struct NonTupleArgProxy : fnfelt::monad::io::AsyncProxyTag
+{
+    using value_type = int;
+    int arg = 0;
+};
+
+/// Proxy without the static `fn` entry - must fail validation.
+struct MissingFnProxy : fnfelt::monad::io::AsyncProxyTag
+{
+    using value_type = int;
+    std::tuple<int> arg;
+};
+
+/// Stateless entry returning a plain value rather than an `lf::task`.
+struct PlainIntFn
+{
+    int operator()(auto /*self*/, int value) const
+    {
+        return value;
+    }
+};
+
+/// Proxy whose `fn` does not return an `lf::task` - must fail validation.
+struct NonTaskFnProxy : fnfelt::monad::io::AsyncProxyTag
+{
+    using value_type = int;
+    std::tuple<int> arg;
+    static constexpr PlainIntFn fn{};
+};
+
+/// Proxy whose `value_type` is a reference - must fail validation.
+struct ReferenceValueProxy : fnfelt::monad::io::AsyncProxyTag
+{
+    using value_type = int &;
+};
+
+/// Proxy whose `value_type` is an IO - must fail validation.
+struct IOValueProxy : fnfelt::monad::io::AsyncProxyTag
+{
+    using value_type = fnfelt::monad::io::IO<int (*)()>;
+};
+
+/// Proxy whose `value_type` is incomplete - must fail validation.
+struct IncompleteValueProxy : fnfelt::monad::io::AsyncProxyTag
+{
+    using value_type = Incomplete;
+};
+
+/// Proxy whose `value_type` is not movable - must fail validation.
+struct NonMovableValueProxy : fnfelt::monad::io::AsyncProxyTag
+{
+    using value_type = NonMovable;
+};
+
 inline constexpr char custom_io_name[] = "CustomIO";
 using CustomIOTraits = fnfelt::monad::io::CreateIOTraits<custom_io_name>;
 
@@ -676,6 +830,69 @@ TEST_CASE("ApIOTraits::validate_ap accepts direct and spread callable types")
         ApIOTraits::validate_ap(
             ^^IO<decltype(two_arg_void_fn_action)>, ^^IO<std::pair<int, int> (*)()>) ==
         "IO-wrapped function's callable does not return a value");
+}
+
+TEST_CASE("CreateIOTraits::validate_action accepts async proxies and rejects malformed ones")
+{
+    using CreateIOTraits = fnfelt::monad::io::CreateIOTraits<>;
+
+    // A tag-deriving action whose proxy exposes a non-void `value_type` alias is valid.
+    static_assert(CreateIOTraits::validate_action(^^AsyncAction).empty());
+    // A proxy without a `value_type` alias is rejected with a specific reason.
+    static_assert(
+        CreateIOTraits::validate_action(^^MissingValueAction) ==
+        "provided action's async proxy does not expose a value_type alias");
+    // A proxy whose `value_type` alias is void is rejected with a specific reason.
+    static_assert(
+        CreateIOTraits::validate_action(^^VoidValueAction) ==
+        "provided action's async proxy must not produce void");
+    // A reference to a valid async proxy is still rejected: the reference check applies to both the
+    // synchronous and asynchronous paths.
+    static_assert(
+        CreateIOTraits::validate_action(^^ReferenceAsyncAction) ==
+        "provided action returns a reference, return by value instead");
+}
+
+TEST_CASE("CreateIOTraits::validate_async_proxy checks the executable proxy shape")
+{
+    using CreateIOTraits = fnfelt::monad::io::CreateIOTraits<>;
+
+    // An executable proxy and one with identical inherited `value_type` aliases are accepted.
+    static_assert(CreateIOTraits::validate_async_proxy(^^AsyncProxy<int>).empty());
+    static_assert(CreateIOTraits::validate_async_proxy(^^SameAliasProxy).empty());
+
+    // Two bases exposing different `value_type` alias targets are ambiguous.
+    static_assert(
+        CreateIOTraits::validate_async_proxy(^^AmbiguousProxy) ==
+        "provided action's async proxy exposes ambiguous value_type aliases");
+    // The stored arg member is required, and must be a std::tuple.
+    static_assert(
+        CreateIOTraits::validate_async_proxy(^^MissingArgProxy) ==
+        "provided action's async proxy must expose an arg member");
+    static_assert(
+        CreateIOTraits::validate_async_proxy(^^NonTupleArgProxy) ==
+        "provided action's async proxy arg member must be a std::tuple");
+    // The static fn entry is required.
+    static_assert(
+        CreateIOTraits::validate_async_proxy(^^MissingFnProxy) ==
+        "provided action's async proxy must expose a static fn member");
+    // fn must return an lf::task.
+    static_assert(
+        CreateIOTraits::validate_async_proxy(^^NonTaskFnProxy) ==
+        "provided action's async proxy fn must return an lf::task");
+    // The unwrapped value is subject to the plain-result rules.
+    static_assert(
+        CreateIOTraits::validate_async_proxy(^^ReferenceValueProxy) ==
+        "provided action's async proxy value must not be a reference type");
+    static_assert(
+        CreateIOTraits::validate_async_proxy(^^IOValueProxy) ==
+        "provided action's async proxy value should not be an IO");
+    static_assert(
+        CreateIOTraits::validate_async_proxy(^^IncompleteValueProxy) ==
+        "provided action's async proxy value is not a complete type");
+    static_assert(
+        CreateIOTraits::validate_async_proxy(^^NonMovableValueProxy) ==
+        "provided action's async proxy value must be movable");
 }
 
 TEST_CASE("JustIOTraits::validate_just checks the lifted value")

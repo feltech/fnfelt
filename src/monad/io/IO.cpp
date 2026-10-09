@@ -108,14 +108,14 @@ TEST_CASE("IO exposes the value type its action produces")
     static_assert(std::is_same_v<IO<int (*)()>::value_type, int>);
 }
 
-TEST_CASE("IO build() runs the action and returns its value")
+TEST_CASE("IO build() yields a run proxy whose sync_wait runs the action")
 {
     using fnfelt::monad::io::IO;
 
     auto capturing_action = [value = 123] { return value; };
-    CHECK_EQ(IO<decltype(capturing_action)>{capturing_action}.build(), 123);
-    CHECK_EQ(IO<CallableStruct>{CallableStruct{}}.build(), 7);
-    CHECK_EQ(IO<int (*)()>{&free_action}.build(), 42);
+    CHECK_EQ(IO<decltype(capturing_action)>{capturing_action}.build().sync_wait(), 123);
+    CHECK_EQ(IO<CallableStruct>{CallableStruct{}}.build().sync_wait(), 7);
+    CHECK_EQ(IO<int (*)()>{&free_action}.build().sync_wait(), 42);
 }
 
 TEST_CASE("IO is copy and move constructible")
@@ -129,6 +129,51 @@ TEST_CASE("IO is copy and move constructible")
     // argument rather than a converting-constructor one.
     static_assert(std::is_constructible_v<io_t, io_t &>);
     static_assert(std::is_constructible_v<io_t, io_t const &>);
+}
+
+TEST_CASE("IO copies from a non-const lvalue IO")
+{
+    using fnfelt::monad::io::IO;
+
+    using io_t = IO<CallableStruct>;
+    auto original = io_t{CallableStruct{}};
+
+    // Copy-initialisation must pick the copy constructor, not the converting constructor.
+    auto copy = original;
+    // CTAD from an lvalue IO.
+    auto deduced{original};
+    // Direct-initialisation naming the type.
+    io_t named{original};
+
+    CHECK_EQ(copy.build().sync_wait(), 7);
+    CHECK_EQ(deduced.build().sync_wait(), 7);
+    CHECK_EQ(named.build().sync_wait(), 7);
+    // The source is copied, not moved from, so it still runs.
+    CHECK_EQ(original.build().sync_wait(), 7);
+}
+
+TEST_CASE("IO moves from an rvalue IO")
+{
+    using fnfelt::monad::io::IO;
+
+    using io_t = IO<MoveOnlyCallable>;
+    static_assert(!std::is_copy_constructible_v<io_t>);
+    static_assert(std::is_move_constructible_v<io_t>);
+
+    // Copy-initialisation from an xvalue picks the move constructor. The move-only action is copied
+    // out of an lvalue IO, so each run proxy needs an rvalue.
+    auto source = io_t{MoveOnlyCallable{}};
+    auto moved = std::move(source);
+    CHECK_EQ(std::move(moved).build().sync_wait(), 9);
+
+    // Direct-initialisation naming the type, from an xvalue.
+    auto named_source = io_t{MoveOnlyCallable{}};
+    io_t named{std::move(named_source)};
+    CHECK_EQ(std::move(named).build().sync_wait(), 9);
+
+    // Direct-initialisation from a prvalue IO.
+    io_t prvalue{io_t{MoveOnlyCallable{}}};
+    CHECK_EQ(std::move(prvalue).build().sync_wait(), 9);
 }
 
 // NOLINTEND(*-magic-numbers)
