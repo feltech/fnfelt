@@ -20,8 +20,11 @@
 
 #include <fnfelt/monad/io/IO.hpp>
 #include <fnfelt/monad/io/and_then.hpp>
+#include <fnfelt/monad/io/ap.hpp>
 #include <fnfelt/monad/io/async.hpp>
 #include <fnfelt/monad/io/create.hpp>
+#include <fnfelt/monad/io/just.hpp>
+#include <fnfelt/monad/io/transform.hpp>
 
 // Magic numbers are used in tests.
 // NOLINTBEGIN(*-magic-numbers)
@@ -190,6 +193,21 @@ struct CopyTrackingArg
     CopyTrackingArg & operator=(CopyTrackingArg const &) = delete;
     CopyTrackingArg & operator=(CopyTrackingArg &&) = delete;
 };
+
+/// Constant-evaluated multi-hop pipeline: (1 + 1) * 2 + 3 == 7.
+consteval int constexpr_multi_hop()
+{
+    using fnfelt::monad::io::detail::action_is_async;
+
+    constexpr auto pipeline =
+        fnfelt::monad::io::create([] { return 1; })
+            .transform([](int x) { return x + 1; })
+            .and_then([](int x) { return fnfelt::monad::io::create([x] { return x * 2; }); })
+            .and_then([](int x) { return fnfelt::monad::io::create([x] { return x + 3; }); });
+    // A purely synchronous chain must stay on the sync arm.
+    static_assert(!action_is_async(^^decltype(pipeline)::action_type));
+    return pipeline.build().sync_wait();
+}
 
 /// Custom execution policy allowing only lvalue run proxies, proving the validator is consulted.
 struct LvalueRunTraits : fnfelt::monad::io::detail::CreateIOTraits<>
@@ -646,6 +664,55 @@ TEST_CASE("async leaf and composed actions pass action validation")
 TEST_CASE("constexpr sync chains coexist with async runtime tests")
 {
     static_assert(constexpr_sync_chain_with_async() == 6);
+}
+
+TEST_CASE("and_then, transform and ap see through async proxies' values")
+{
+    auto continuation = [](int value)
+    { return fnfelt::monad::io::create([value] { return value + 1; }); };
+    auto transformer = [](int value) { return value + 1; };
+
+    using bound_action_type =
+        fnfelt::monad::io::detail::AndThenAction<async_int_io, decltype(continuation)>;
+    using mapped_action_type =
+        fnfelt::monad::io::detail::TransformAction<async_int_io, decltype(transformer)>;
+    using bound_proxy_type = fnfelt::monad::io::AndThenProxy<async_int_io, decltype(continuation)>;
+    using mapped_proxy_type =
+        fnfelt::monad::io::TransformProxy<async_int_io, decltype(transformer)>;
+    static_assert(std::is_same_v<bound_action_type::result_type, bound_proxy_type>);
+    static_assert(std::is_same_v<mapped_action_type::result_type, mapped_proxy_type>);
+    static_assert(sizeof(bound_proxy_type) > 0);
+    static_assert(sizeof(mapped_proxy_type) > 0);
+
+    // The async source's unwrapped value (int) is what the continuation/transformer must accept.
+    static_assert(fnfelt::monad::io::detail::AndThenIOTraits<>::validate_and_then(
+                      ^^async_int_io, ^^decltype(continuation))
+                      .empty());
+    static_assert(fnfelt::monad::io::detail::TransformIOTraits<>::validate_transform(
+                      ^^async_int_io, ^^decltype(transformer))
+                      .empty());
+    // The async function IO's callable accepts the async value IO's value.
+    static_assert(
+        fnfelt::monad::io::detail::ApIOTraits<>::validate_ap(^^async_fn_io, ^^async_int_io)
+            .empty());
+}
+
+TEST_CASE("sync pipelines remain constant-evaluable through sync_wait")
+{
+    static_assert(constexpr_multi_hop() == 7);
+}
+
+TEST_CASE("async leaves retain referenced bound arguments inside compositions")
+{
+    constexpr auto length = [](auto, std::string const & text) -> lf::task<int>
+    { co_return static_cast<int>(text.size()); };
+    auto source = fnfelt::monad::io::create_async(length, std::string(200, 'x'));
+    CHECK_EQ(
+        source.transform([](int size) { return size + 1; }).build().sync_wait(lf::lazy_pool{2}),
+        201);
+    auto applied =
+        fnfelt::monad::io::ap(fnfelt::monad::io::just([](int size) { return size * 2; }), source);
+    CHECK_EQ(applied.build().sync_wait(lf::lazy_pool{2}), 400);
 }
 
 TEST_CASE("IORunProxy executes a custom async proxy")
