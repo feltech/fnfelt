@@ -2,6 +2,18 @@
 # SPDX-License-Identifier: MIT
 # Copyright 2026 David Feltell
 
+# Build the shared PCH with the normal build so expected failures can reuse it.
+set(_pch_target ${PROJECT_NAME}.test.compile_fail.pch)
+add_library(${_pch_target} OBJECT pch.cpp)
+target_link_libraries(${_pch_target} PRIVATE doctest::doctest ${PROJECT_NAME}.lib)
+fnfelt_target_warnings(${_pch_target})
+set_target_properties(${_pch_target} PROPERTIES COMPILE_WARNING_AS_ERROR ON)
+target_precompile_headers(
+  ${_pch_target}
+  PRIVATE
+  <meta>
+  <fnfelt/monad/io/IO.hpp>)
+
 # fnfelt_compile_fail(<name> SOURCE <file.cpp> ERROR_REGEX <regex>)
 #
 # Register a CTest test that passes iff <file.cpp> FAILS to compile against fnfelt.lib and the
@@ -38,6 +50,7 @@ function(fnfelt_test_compile_fail name)
   # Match the main build's warning policy, which the library does not propagate.
   fnfelt_target_warnings(${target})
   set_target_properties(${target} PROPERTIES COMPILE_WARNING_AS_ERROR ON)
+  target_precompile_headers(${target} REUSE_FROM ${_pch_target})
   # Do not build as part of a whole-project build (since it'll fail by design).
   set_target_properties(${target} PROPERTIES EXCLUDE_FROM_ALL TRUE)
   # Building the target _is_ the test.
@@ -51,3 +64,5 @@ endfunction()
 
 ####################################################################################################
 # Compiler error test packages
+
+add_subdirectory(monad)
