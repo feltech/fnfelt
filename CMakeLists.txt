@@ -28,6 +28,8 @@ endif()
 ####################################################################################################
 # Main project
 
+find_package(libfork REQUIRED)
+
 add_subdirectory(src)
 
 if(${PROJECT_NAME}_ENABLE_DEV)

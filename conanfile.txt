@@ -4,6 +4,7 @@
 
 [requires]
 doctest/2.5.3
+libfork/3.8.0
 
 [generators]
 CMakeDeps

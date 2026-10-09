@@ -64,7 +64,7 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}-config.cmake
 target_compile_features(${_lib_target} INTERFACE cxx_std_26)
 set_target_properties(${_lib_target} PROPERTIES CXX_EXTENSIONS OFF)
 
-target_link_libraries(${_lib_target} INTERFACE)
+target_link_libraries(${_lib_target} INTERFACE libfork::libfork)
 
 # Only the reflection flag is exported: warning flags are a project-internal policy applied by
 # fnfelt_target_linters, so consumers keep ownership of their own warning settings.

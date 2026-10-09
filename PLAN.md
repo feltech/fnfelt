@@ -349,9 +349,10 @@ path). The reviewer checks the implementation against this section.
 
 Each a separate green commit. `FILE_SET`/umbrella updated in the stage that creates each header.
 
-- **A — plumbing**: `conanfile.txt` += `libfork/3.8.0`; `find_package`; link `libfork::libfork` to
-  `fnfelt.lib` with `INTERFACE` (**not** `PUBLIC` — configure error on the header-only INTERFACE
-  lib); re-run `conan install .`. Full build + `ctest` green with the dep in place.
+- **A — plumbing — COMPLETE**: `conanfile.txt` += `libfork/3.8.0`; `find_package`; link
+  `libfork::libfork` to `fnfelt.lib` with `INTERFACE` (**not** `PUBLIC` — configure error on the
+  header-only INTERFACE lib); re-run `conan install .`. Full build + `ctest` green with the dep in
+  place.
 - **B — `RunProxy` core**: `fwd.hpp` gains `AsyncProxyTag` + `RunProxy` fwd-decl; `detail.hpp` gains
   helpers; `IO::operator()` migrates to return `RunProxy`; ALL existing tests → `io().sync_wait()`;
   detection-only mock-proxy tests (incl. a void-`value` variant) and a copy-counting doctest; update
