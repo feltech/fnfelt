@@ -9,7 +9,8 @@
  *
  * `IO::operator()` yields a `RunProxy` holding the IO's action; calling `sync_wait` on it is the
  * only execution path. Asynchronous actions run on libfork; `create_async` wraps a stateless
- * coroutine function into an IO and `and_then` composes sync and async IOs transparently.
+ * coroutine function into an IO and `and_then` composes sync and async IOs transparently. Values
+ * produced on the async path must be movable, since they are returned through `lf::task`.
  */
 #pragma once
 
