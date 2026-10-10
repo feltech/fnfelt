@@ -21,6 +21,8 @@
 #include <utility>
 #include <vector>
 
+#include <libfork/core/control_flow.hpp>
+#include <libfork/core/eventually.hpp>
 #include <libfork/core/impl/promise.hpp>
 #include <libfork/core/just.hpp>
 #include <libfork/core/sync_wait.hpp>
@@ -357,6 +359,104 @@ struct AndThenProxy : AsyncProxyTag
         : arg{std::move(arg_in)}
     {
     }
+};
+
+/**
+ * Async proxy composing a function IO and a value IO (async/mixed `ap`).
+ *
+ * The driver runs both IOs concurrently when both are asynchronous, forking each into its own
+ * libfork slot and joining; when only one is asynchronous, that side is forked and the synchronous
+ * side runs inline so the two still overlap. The callable is then applied to the value with the
+ * same direct-vs-spread dispatch as the synchronous action.
+ *
+ * @tparam TFnIO IO whose value is a callable.
+ * @tparam TValueIO IO whose value is the callable's argument.
+ */
+template <class TFnIO, class TValueIO>
+struct ApProxy : AsyncProxyTag
+{
+    /// Value the composed IO produces.
+    using value_type = [:detail::ap_result_meta<TFnIO, TValueIO>():];
+    /// Function IO and value IO spread into @ref fn.
+    std::tuple<TFnIO, TValueIO> arg;
+    /// Reflection of the function IO's value.
+    static constexpr std::meta::info fn_value_meta = detail::io_value_meta(^^TFnIO);
+    /// Reflection of the value IO's value.
+    static constexpr std::meta::info value_value_meta = detail::io_value_meta(^^TValueIO);
+    // Dispatch is computed here, at class scope, because gcc 16.2 rejects reflection queries in a
+    // lambda's `if constexpr` condition.
+    /// Whether the function IO's action is asynchronous.
+    static constexpr bool fn_is_async = detail::action_is_async(detail::io_action_meta(^^TFnIO));
+    /// Whether the value IO's action is asynchronous.
+    static constexpr bool value_is_async =
+        detail::action_is_async(detail::io_action_meta(^^TValueIO));
+    /// Whether the callable is applied directly to the value.
+    static constexpr bool direct_dispatch = is_invocable_type(fn_value_meta, {value_value_meta});
+    /// Whether the callable is applied by spreading the value's template arguments.
+    static constexpr bool spread_dispatch =
+        !direct_dispatch && detail::is_spread_invocable_as(fn_value_meta, value_value_meta);
+
+    /**
+     * Apply the callable to the value on moved locals (prvalue receiver semantics).
+     *
+     * @param fn_value The callable to apply.
+     * @param arg_value The value to apply it to.
+     * @return The application's result.
+     */
+    static constexpr auto apply_result(auto && fn_value, auto && arg_value) -> value_type
+    {
+        // Direct invocation wins over spreading, mirroring the synchronous action.
+        if constexpr (direct_dispatch)
+        {
+            return std::invoke(FW(fn_value), FW(arg_value));
+        }
+        if constexpr (spread_dispatch)
+        {
+            return std::apply(FW(fn_value), FW(arg_value));
+        }
+    }
+
+    /// Async/mixed application driver.
+    static constexpr auto fn = [](auto, TFnIO fn_io, TValueIO value_io) -> lf::task<value_type>
+    {
+        using fn_value_type = typename TFnIO::value_type;
+        using value_value_type = typename TValueIO::value_type;
+        if constexpr (fn_is_async && value_is_async)
+        {
+            // Fork both sides so they run concurrently, then join before applying.
+            lf::eventually<fn_value_type> fn_slot;
+            lf::eventually<value_value_type> value_slot;
+            co_await lf::fork[&fn_slot, detail::co_run](std::move(fn_io));
+            co_await lf::fork[&value_slot, detail::co_run](std::move(value_io));
+            co_await lf::join;
+            co_return apply_result(std::move(*fn_slot), std::move(*value_slot));
+        }
+        if constexpr (fn_is_async && !value_is_async)
+        {
+            // Fork the async function side, run the sync value side inline so they overlap.
+            lf::eventually<fn_value_type> fn_slot;
+            co_await lf::fork[&fn_slot, detail::co_run](std::move(fn_io));
+            auto arg_value = co_await lf::just[detail::co_run](std::move(value_io));
+            co_await lf::join;
+            co_return apply_result(std::move(*fn_slot), std::move(arg_value));
+        }
+        if constexpr (!fn_is_async && value_is_async)
+        {
+            // Symmetric: fork the async value side, run the sync function side inline.
+            lf::eventually<value_value_type> value_slot;
+            co_await lf::fork[&value_slot, detail::co_run](std::move(value_io));
+            auto fn_value = co_await lf::just[detail::co_run](std::move(fn_io));
+            co_await lf::join;
+            co_return apply_result(std::move(fn_value), std::move(*value_slot));
+        }
+    };
+
+    /**
+     * Construct from the function IO and value IO.
+     *
+     * @param arg_in Function IO and value IO to store.
+     */
+    constexpr explicit ApProxy(std::tuple<TFnIO, TValueIO> arg_in) : arg{std::move(arg_in)} {}
 };
 
 /**

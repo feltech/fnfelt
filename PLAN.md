@@ -364,7 +364,7 @@ Each a separate green commit. `FILE_SET`/umbrella updated in the stage that crea
   stored `fn`); async/mixed `AndThenAction`; mixed-chain and sync-over-async / async-over-sync
   tests; `std::unique_ptr<int>` through an and_then with a not-copy-constructible `static_assert`; a
   `std::pair<int,int>` spread-on-async test; ASan/UBSan via `-Dfnfelt_ENABLE_SANITIZER_ASAN=ON`.
-- **D — concurrent ap**: async `ApAction` via fork both sides + join; tests for mixed
+- **D — concurrent ap — COMPLETE**: async `ApAction` via fork both sides + join; tests for mixed
   async-fn×sync-value / sync-fn×async-value (likeliest bug spot); `lf::lazy_pool{2}` + atomic
   rendezvous concurrency proof; move-only-callable `ap`; deep mixed `ap`-in-`and_then`-in-`ap`
   pipeline; ap-composed spread variant; ASan/UBSan.

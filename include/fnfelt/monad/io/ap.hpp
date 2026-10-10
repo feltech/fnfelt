@@ -43,40 +43,49 @@ struct ApError
 };
 
 /**
- * Reflection of the value an ApAction produces when run.
+ * Whether an ap application must run asynchronously.
  *
- * The function IO's callable is applied to the value IO's value directly when possible, otherwise
- * the value is spread into the callable (direct invocation wins over spreading), mirroring the
- * action's dispatch.
- *
- * Used as the action's declared return type so that validating the action never instantiates its
- * body, which would otherwise require copying a move-only nested action for the const receiver.
+ * The application is asynchronous when either the function IO's action or the value IO's action is
+ * asynchronous. The result type and the action's run-time dispatch both derive from this predicate,
+ * keeping them in sync.
  *
  * @tparam TFnIO IO whose value is a callable.
  * @tparam TValueIO IO whose value is the callable's argument.
- * @return Reflection of the value the action produces.
+ * @return True if the application runs asynchronously.
  */
 template <class TFnIO, class TValueIO>
-consteval std::meta::info ap_result_meta()
+consteval bool ap_is_async()
 {
-    constexpr std::meta::info fn_value_meta = io_value_meta(^^TFnIO);
-    constexpr std::meta::info value_meta = io_value_meta(^^TValueIO);
-    if constexpr (is_invocable_type(fn_value_meta, {value_meta}))
+    return action_is_async(io_action_meta(^^TFnIO)) || action_is_async(io_action_meta(^^TValueIO));
+}
+
+/**
+ * Reflection of the value an ApAction's declared return type names.
+ *
+ * Synchronous applications produce a plain value; asynchronous or mixed ones produce the composed
+ * async proxy.
+ *
+ * @tparam TFnIO IO whose value is a callable.
+ * @tparam TValueIO IO whose value is the callable's argument.
+ * @return Reflection of the action's declared return type.
+ */
+template <class TFnIO, class TValueIO>
+consteval std::meta::info ap_result_type_meta()
+{
+    if constexpr (ap_is_async<TFnIO, TValueIO>())
     {
-        return invoke_result(fn_value_meta, {value_meta});
+        return ^^ApProxy<TFnIO, TValueIO>;
     }
-    if constexpr (is_spread_invocable_as(fn_value_meta, value_meta))
-    {
-        return invoke_result(fn_value_meta, template_arguments_of(dealias(value_meta)));
-    }
-    return ^^void;
+    return ap_result_meta<TFnIO, TValueIO>();
 }
 
 /**
  * Action that runs a function IO and a value IO, then applies the function to the value.
  *
  * The function IO is run first to obtain a callable, then the value IO is run to obtain a value,
- * and the callable is applied to the value. The callable is invoked with the value directly when
+ * and the callable is applied to the value. Synchronous applications produce a plain value;
+ * asynchronous or mixed ones instead materialise the composed async proxy so that the whole tree
+ * runs under a single top-level scheduler. The callable is invoked with the value directly when
  * possible, otherwise the value is spread into the callable as if by `std::apply` (direct
  * invocation wins over spreading), mirroring `AndThenAction`.
  *
@@ -89,8 +98,8 @@ consteval std::meta::info ap_result_meta()
 template <class TFnIO, class TValueIO>
 struct ApAction
 {
-    /// Value the action produces when run.
-    using result_type = [:ap_result_meta<TFnIO, TValueIO>():];
+    /// Value the action produces when run (async proxy or plain value).
+    using result_type = [:ap_result_type_meta<TFnIO, TValueIO>():];
     /// IO whose value is a callable.
     TFnIO fn_io;
     /// IO whose value is the callable's argument.
@@ -101,22 +110,30 @@ struct ApAction
      *
      * @param self The action to run (explicit object parameter).
      *
-     * @return The result of applying the function IO's value to the value IO's value.
+     * @return The composed async proxy, or the result of applying the function IO's value to the
+     * value IO's value on the synchronous path.
      */
     constexpr auto operator()(this auto && self) -> result_type
     {
-        constexpr std::meta::info fn_value_meta = io_value_meta(^^TFnIO);
-        constexpr std::meta::info val_value_meta = io_value_meta(^^TValueIO);
-        // The callable and value are moved into local variables before invocation.
-        auto fn = FW(self).fn_io().sync_wait();
-        auto value = FW(self).value_io().sync_wait();
-        if constexpr (is_invocable_type(fn_value_meta, {val_value_meta}))
+        if constexpr (ap_is_async<TFnIO, TValueIO>())
         {
-            return std::invoke(std::move(fn), std::move(value));
+            return result_type{std::tuple<TFnIO, TValueIO>{FW(self).fn_io, FW(self).value_io}};
         }
-        if constexpr (is_spread_invocable_as(fn_value_meta, val_value_meta))
+        if constexpr (!ap_is_async<TFnIO, TValueIO>())
         {
-            return std::apply(std::move(fn), std::move(value));
+            constexpr std::meta::info fn_value_meta = io_value_meta(^^TFnIO);
+            constexpr std::meta::info val_value_meta = io_value_meta(^^TValueIO);
+            // The callable and value are moved into local variables before invocation.
+            auto fn = FW(self).fn_io().sync_wait();
+            auto value = FW(self).value_io().sync_wait();
+            if constexpr (is_invocable_type(fn_value_meta, {val_value_meta}))
+            {
+                return std::invoke(std::move(fn), std::move(value));
+            }
+            if constexpr (is_spread_invocable_as(fn_value_meta, val_value_meta))
+            {
+                return std::apply(std::move(fn), std::move(value));
+            }
         }
     }
 };
