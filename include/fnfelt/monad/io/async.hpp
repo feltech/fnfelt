@@ -9,7 +9,10 @@
  *
  * `IO::build()` yields a `RunProxy` holding the IO's action; calling `sync_wait` on it is the
  * only execution path. Asynchronous actions run on libfork; `create_async` wraps a stateless
- * coroutine function into an IO and `and_then` composes sync and async IOs transparently.
+ * coroutine function into an IO and `and_then` composes sync and async IOs transparently. Values
+ * produced inside asynchronous composition must be movable (move constructible and assignable),
+ * since they are returned through `lf::task`; this includes the sync sides composed into an async
+ * `ap` (e.g. a capturing lambda cannot be such a value).
  */
 #pragma once
 
@@ -100,6 +103,10 @@ struct AsyncLeafAction
  * only a copy of the function object at run time, so a stateful function would dangle. The
  * argument types are decayed, stored by value in the async proxy, and spread into `fn` when the
  * proxy's coroutine entry runs.
+ *
+ * Plain side effects stay synchronous and still compose concurrently under `ap`; `create_async` is
+ * for leaves that must genuinely suspend into the pool (a forked blocking synchronous side still
+ * pins a worker).
  *
  * @tparam TTraits Traits used to validate the action and for the result IO, defaulting to
  * CreateAsyncIOTraits.

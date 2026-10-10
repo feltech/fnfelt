@@ -7,8 +7,12 @@
 
 #include <meta>
 
+#include <atomic>
 #include <memory>
+#include <stdexcept>
 #include <string>
+#include <string_view>
+#include <thread>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -156,6 +160,146 @@ int int_action()
 {
     return 1;
 }
+
+/// Stateless functor returned by an async function leaf, incrementing its argument.
+struct Increment
+{
+    constexpr int operator()(int value) const
+    {
+        return value + 1;
+    }
+};
+
+/// Movable stateful functor returned by an async function leaf, scaling then adding.
+struct ScaleAndAdd
+{
+    int scale = 0;
+
+    constexpr int operator()(int value) const
+    {
+        return scale * 100 + value;
+    }
+};
+
+/// Stateless async function leaf producing an `Increment` callable.
+inline constexpr auto async_fn_increment = [](auto, int) -> lf::task<Increment>
+{ co_return Increment{}; };
+
+/// Stateless async function leaf producing a `ScaleAndAdd` callable.
+inline constexpr auto async_fn_scale = [](auto, int scale) -> lf::task<ScaleAndAdd>
+{ co_return ScaleAndAdd{scale}; };
+
+/// Stateless async function leaf yielding its argument unchanged.
+inline constexpr auto async_identity = [](auto, int value) -> lf::task<int> { co_return value; };
+
+/// Stateless async function leaf producing a pair, for spread dispatch.
+inline constexpr auto async_pair = [](auto, int value) -> lf::task<std::pair<int, int>>
+{ co_return std::pair{value, value + 1}; };
+
+/// Move-only callable holding a factor, returned by an async function leaf.
+struct MoveOnlyCallable
+{
+    std::unique_ptr<int> factor;
+
+    int operator()(int value) const
+    {
+        return value * *factor;
+    }
+};
+
+/// Stateless async function leaf producing a move-only callable from a move-only factor.
+inline constexpr auto async_move_only_fn =
+    [](auto, std::unique_ptr<int> factor) -> lf::task<MoveOnlyCallable>
+{ co_return MoveOnlyCallable{std::move(factor)}; };
+
+/// Bound on the rendezvous spin so a serialized run cannot hang.
+inline constexpr int rendezvous_spin_limit = 10000000;
+
+/**
+ * Publish this side's flag, then bounded-spin until the peer's flag is observed.
+ *
+ * @param self_flag Flag set by this side.
+ * @param peer_flag Flag set by the other side.
+ * @return True if the peer's flag was observed before the bound elapsed.
+ */
+bool rendezvous(std::atomic<bool> * self_flag, std::atomic<bool> * peer_flag)
+{
+    self_flag->store(true, std::memory_order_relaxed);
+    for (int spin = 0; spin < rendezvous_spin_limit; ++spin)
+    {
+        if (peer_flag->load(std::memory_order_relaxed))
+        {
+            return true;
+        }
+        if (spin % 1024 == 0)
+        {
+            std::this_thread::yield();
+        }
+    }
+    return false;
+}
+
+/// Callable whose result is poisoned when its rendezvous timed out.
+struct RendezvousCallable
+{
+    bool healthy = false;
+
+    int operator()(int value) const
+    {
+        return healthy ? value + 1 : -1;
+    }
+};
+
+/// Callable returned by a rendezvousing sync fn side; carries a poison `add` on timeout.
+struct SyncRendezvousFn
+{
+    int add = 0;
+
+    int operator()(int value) const
+    {
+        return value + add;
+    }
+};
+
+/// Stateless async function leaf that rendezvouses, then yields a callable.
+inline constexpr auto async_rendezvous_fn =
+    [](auto,
+       std::atomic<bool> * self_flag,
+       std::atomic<bool> * peer_flag) -> lf::task<RendezvousCallable>
+{ co_return RendezvousCallable{rendezvous(self_flag, peer_flag)}; };
+
+/// Stateless async value leaf that rendezvouses, then yields its value (poisoned on timeout).
+inline constexpr auto async_rendezvous_value =
+    [](auto, std::atomic<bool> * self_flag, std::atomic<bool> * peer_flag) -> lf::task<int>
+{ co_return rendezvous(self_flag, peer_flag) ? 41 : -1000; };
+
+/// Stateless async value leaf that publishes its flag, then throws (never reaches its co_return).
+inline constexpr auto async_throwing_value = [](auto, std::atomic<bool> * flag) -> lf::task<int>
+{
+    flag->store(true, std::memory_order_relaxed);
+    throw std::runtime_error("async value failure");
+    co_return 0;
+};
+
+inline constexpr char async_ap_name[] = "AsyncAp";
+using AsyncApTraits = fnfelt::monad::io::ApIOTraits<async_ap_name>;
+
+/// Custom traits delegating to the default traits, for the async ap injection point.
+struct DelegatingApTraits
+{
+    static constexpr std::string_view name = "DelegatingApIO";
+
+    static consteval std::string_view validate_action(std::meta::info action_meta)
+    {
+        return fnfelt::monad::io::CreateIOTraits<>::validate_action(action_meta);
+    }
+
+    static consteval std::string_view validate_ap(
+        std::meta::info fn_io_meta, std::meta::info value_io_meta)
+    {
+        return fnfelt::monad::io::ApIOTraits<>::validate_ap(fn_io_meta, value_io_meta);
+    }
+};
 }  // namespace
 
 namespace ap_error_msg_test
@@ -474,6 +618,210 @@ TEST_CASE("ap copies lvalue IOs independently of an rvalue argument")
         fn_io, IO<MoveTrackingValueAction, ApIOTraits<>>{MoveTrackingValueAction{}});
     CHECK_EQ(std::move(mixed).build().sync_wait(), 11);
     static_assert(!std::is_copy_constructible_v<decltype(mixed)>);
+}
+
+TEST_CASE("ap composes two async sides and applies the callable")
+{
+    using fnfelt::monad::io::detail::action_is_async;
+
+    auto applied = fnfelt::monad::io::ap(
+        fnfelt::monad::io::create_async(async_fn_increment, 0),
+        fnfelt::monad::io::create_async(async_identity, 41));
+    // Both sides are async, so the composition must take the async arm.
+    static_assert(action_is_async(^^decltype(applied)::action_type));
+    static_assert(std::is_same_v<decltype(applied)::value_type, int>);
+    CHECK_EQ(applied.build().sync_wait(), 42);
+    CHECK_EQ(applied.build().sync_wait(lf::lazy_pool{2}), 42);
+}
+
+TEST_CASE("ap overlaps an async side with a sync side")
+{
+    using fnfelt::monad::io::detail::action_is_async;
+
+    // Async function side, sync value side.
+    auto async_fn_sync_value = fnfelt::monad::io::ap(
+        fnfelt::monad::io::create_async(async_fn_increment, 0),
+        fnfelt::monad::io::create([] { return 41; }));
+    static_assert(action_is_async(^^decltype(async_fn_sync_value)::action_type));
+    CHECK_EQ(async_fn_sync_value.build().sync_wait(lf::lazy_pool{2}), 42);
+
+    // Sync function side, async value side.
+    auto sync_fn_async_value = fnfelt::monad::io::ap(
+        fnfelt::monad::io::create([] { return [](int x) { return x + 1; }; }),
+        fnfelt::monad::io::create_async(async_identity, 41));
+    static_assert(action_is_async(^^decltype(sync_fn_async_value)::action_type));
+    CHECK_EQ(sync_fn_async_value.build().sync_wait(lf::lazy_pool{2}), 42);
+
+    // Negative witness: a fully sync ap stays on the sync arm.
+    auto sync_ap = fnfelt::monad::io::ap(
+        fnfelt::monad::io::create([] { return [](int x) { return x + 1; }; }),
+        fnfelt::monad::io::create([] { return 41; }));
+    static_assert(!action_is_async(^^decltype(sync_ap)::action_type));
+    CHECK_EQ(sync_ap.build().sync_wait(), 42);
+}
+
+TEST_CASE("ap runs both async sides concurrently (atomic rendezvous)")
+{
+    // The flags live in this frame, which outlives sync_wait; the stateless leaves receive
+    // pointers to them. Each leaf sets its own flag, then bounded-spins until it observes the
+    // other's. If the two sides were serialized on one thread, one spin would time out and its
+    // poison value would flow through, failing the check.
+    std::atomic<bool> fn_flag{false};
+    std::atomic<bool> value_flag{false};
+
+    auto applied = fnfelt::monad::io::ap(
+        fnfelt::monad::io::create_async(async_rendezvous_fn, &fn_flag, &value_flag),
+        fnfelt::monad::io::create_async(async_rendezvous_value, &value_flag, &fn_flag));
+    CHECK_EQ(applied.build().sync_wait(lf::lazy_pool{2}), 42);
+}
+
+TEST_CASE("ap overlaps a sync fn side with an async value side (atomic rendezvous)")
+{
+    // The sync fn side is lifted into a forked task, so it runs on another worker while the async
+    // value side runs inline. The flags live in this frame, which outlives sync_wait; the sync
+    // action captures pointers to them and the stateless leaf receives pointers too. Each side sets
+    // its own flag, then bounded-spins until it observes the other's. If the two sides were
+    // serialized, one spin would time out and its poison would flow through, failing the check.
+    std::atomic<bool> fn_flag{false};
+    std::atomic<bool> value_flag{false};
+
+    auto applied = fnfelt::monad::io::ap(
+        fnfelt::monad::io::create(
+            [&fn_flag, &value_flag]
+            { return SyncRendezvousFn{rendezvous(&fn_flag, &value_flag) ? 1 : -1000}; }),
+        fnfelt::monad::io::create_async(async_rendezvous_value, &value_flag, &fn_flag));
+    CHECK_EQ(applied.build().sync_wait(lf::lazy_pool{2}), 42);
+}
+
+TEST_CASE("ap propagates an exception thrown by a sync fn side")
+{
+    // The sync fn side is forked, so the exception crosses the fork boundary and the eventually
+    // slot before being rethrown by lf::sync_wait. The declared non-void return type keeps the
+    // action from producing void even though it never returns.
+    auto applied = fnfelt::monad::io::ap(
+        fnfelt::monad::io::create(
+            []() -> Increment { throw std::runtime_error("sync fn failure"); }),
+        fnfelt::monad::io::create_async(async_identity, 41));
+    CHECK_THROWS_AS(
+        static_cast<void>(applied.build().sync_wait(lf::lazy_pool{2})), std::runtime_error);
+}
+
+TEST_CASE("ap propagates an exception thrown by an async value side while the fn side is forked")
+{
+    // The value side is called inline while the sync fn side runs forked, so the two overlap. The
+    // value leaf publishes its flag and then throws; the fn side spins only until that flag, then
+    // returns, so the forked child completes and the join surfaces the value side's exception. Were
+    // the exception surfaced before the join (the old `lf::just` shape), the fn sibling would still
+    // be spinning when the task threw.
+    std::atomic<bool> value_flag{false};
+
+    auto applied = fnfelt::monad::io::ap(
+        fnfelt::monad::io::create(
+            [&value_flag]
+            {
+                for (int spin = 0; spin < rendezvous_spin_limit; ++spin)
+                {
+                    if (value_flag.load(std::memory_order_relaxed))
+                    {
+                        return SyncRendezvousFn{1};
+                    }
+                    if (spin % 1024 == 0)
+                    {
+                        std::this_thread::yield();
+                    }
+                }
+                return SyncRendezvousFn{-1000};
+            }),
+        fnfelt::monad::io::create_async(async_throwing_value, &value_flag));
+    CHECK_THROWS_AS(
+        static_cast<void>(applied.build().sync_wait(lf::lazy_pool{2})), std::runtime_error);
+}
+
+TEST_CASE("ap moves a move-only callable produced by an async function IO")
+{
+    auto applied = fnfelt::monad::io::ap(
+        fnfelt::monad::io::create_async(async_move_only_fn, std::make_unique<int>(2)),
+        fnfelt::monad::io::create_async(async_identity, 21));
+    static_assert(std::is_same_v<decltype(applied)::value_type, int>);
+    // The function IO stores a move-only argument, so the composed action and IO are move-only.
+    static_assert(!std::is_copy_constructible_v<decltype(applied)>);
+    CHECK_EQ(std::move(applied).build().sync_wait(lf::lazy_pool{2}), 42);
+}
+
+TEST_CASE("ap composes with and_then across alternating sync and async levels")
+{
+    using fnfelt::monad::io::detail::action_is_async;
+
+    // Outer async ap: Increment(async 1) = 2. Middle sync and_then: *10 = 20. Inner async ap:
+    // ScaleAndAdd{20}(async 7) = 2007.
+    auto pipeline =
+        fnfelt::monad::io::ap(
+            fnfelt::monad::io::create_async(async_fn_increment, 0),
+            fnfelt::monad::io::create_async(async_identity, 1))
+            .and_then([](int x) { return fnfelt::monad::io::create([x] { return x * 10; }); })
+            .and_then(
+                [](int x)
+                {
+                    return fnfelt::monad::io::ap(
+                        fnfelt::monad::io::create_async(async_fn_scale, x),
+                        fnfelt::monad::io::create_async(async_identity, 7));
+                });
+    static_assert(action_is_async(^^decltype(pipeline)::action_type));
+    CHECK_EQ(pipeline.build().sync_wait(lf::lazy_pool{2}), 2007);
+}
+
+TEST_CASE("ap spreads a pair produced by an async value IO")
+{
+    auto applied = fnfelt::monad::io::ap(
+        fnfelt::monad::io::create([] { return [](int lhs, int rhs) { return lhs * 10 + rhs; }; }),
+        fnfelt::monad::io::create_async(async_pair, 3));
+    static_assert(std::is_same_v<decltype(applied)::value_type, int>);
+    CHECK_EQ(applied.build().sync_wait(lf::lazy_pool{2}), 34);
+}
+
+TEST_CASE("ap names and traits the result on the async path")
+{
+    using namespace fnfelt::literals;  // NOLINT
+    using fnfelt::monad::io::detail::action_is_async;
+
+    auto named = fnfelt::monad::io::ap<"Async ap"_ss>(
+        fnfelt::monad::io::create_async(async_fn_increment, 0),
+        fnfelt::monad::io::create([] { return 41; }));
+    static_assert(decltype(named)::traits::name == "Async ap");
+    static_assert(action_is_async(^^decltype(named)::action_type));
+    CHECK_EQ(named.build().sync_wait(lf::lazy_pool{2}), 42);
+
+    auto custom = fnfelt::monad::io::ap<AsyncApTraits>(
+        fnfelt::monad::io::create_async(async_fn_increment, 0),
+        fnfelt::monad::io::create([] { return 41; }));
+    static_assert(std::is_same_v<decltype(custom)::traits, AsyncApTraits>);
+    static_assert(action_is_async(^^decltype(custom)::action_type));
+    CHECK_EQ(custom.build().sync_wait(lf::lazy_pool{2}), 42);
+}
+
+TEST_CASE("ap consults custom traits that delegate to the default on the async path")
+{
+    using fnfelt::monad::io::detail::action_is_async;
+
+    auto applied = fnfelt::monad::io::ap<DelegatingApTraits>(
+        fnfelt::monad::io::create_async(async_fn_increment, 0),
+        fnfelt::monad::io::create_async(async_identity, 41));
+    static_assert(std::is_same_v<decltype(applied)::traits, DelegatingApTraits>);
+    static_assert(action_is_async(^^decltype(applied)::action_type));
+    CHECK_EQ(applied.build().sync_wait(lf::lazy_pool{2}), 42);
+}
+
+TEST_CASE("ApIOTraits::validate_ap rejects an incompatible callable against an async value IO")
+{
+    using string_fn_io =
+        decltype(fnfelt::monad::io::create([] { return [](std::string) { return 1; }; }));
+    using async_value_io = decltype(fnfelt::monad::io::create_async(async_identity, 41));
+
+    // The callable's string parameter does not accept the async value IO's value, so validation
+    // fails on the async path with the standard "does not accept" reason.
+    static_assert(
+        fnfelt::monad::io::ApIOTraits<>::validate_ap(^^string_fn_io, ^^async_value_io) ==
+        "IO-wrapped function's callable does not accept the IO-wrapped value's value");
 }
 
 // NOLINTEND(*-magic-numbers)
