@@ -422,6 +422,167 @@ inline constexpr auto call_child = [](auto & slot, auto child_io)
     }
 };
 
+/**
+ * Constructs the diagnostic message for a rejected async function.
+ *
+ * The message includes the IO name, the specific validation failure reason, and the offending
+ * function's display string, so the reason stays readable before any compiler truncation of the
+ * message.
+ *
+ * This function is called only within a static_assert to provide friendly diagnostics; it must
+ * never be evaluated at runtime.
+ *
+ * @tparam fn_meta Reflection of the (decayed) async function type.
+ * @param io_name Display name of the resulting IO (from traits).
+ * @param reason Validation failure reason from `TTraits::validate_create_async`.
+ * @return Formatted error message string.
+ */
+template <std::meta::info fn_meta>
+consteval std::string create_async_error_msg(std::string_view io_name, std::string_view reason)
+{
+    std::string msg;
+    msg += "fnfelt: ";
+    fnfelt::detail::append_string_view(msg, io_name);
+    msg += ' ';
+    msg += "async action is invalid: ";
+    fnfelt::detail::append_string_view(msg, reason);
+    msg += ": ";
+    fnfelt::detail::append_string_view(msg, display_string_of(fn_meta));
+    return msg;
+}
+
+}  // namespace detail
+
+/**
+ * Async leaf proxy: stores a leaf's arguments and exposes the stateless coroutine entry.
+ *
+ * @tparam TFn User's stateless coroutine function type.
+ * @tparam TArgTuple Stored argument tuple type.
+ */
+template <class TFn, class TArgTuple>
+struct AsyncLeafProxy : AsyncProxyTag
+{
+    /// Value the coroutine produces.
+    using value_type = [:detail::async_leaf_value_meta(^^TFn, ^^TArgTuple):];
+    /// Arguments spread into @ref fn.
+    std::tuple<TArgTuple> arg;
+    /// Coroutine entry retaining bound arguments through completion of the user's coroutine.
+    // `fn` is the libfork-imposed entry-point name, exempted from the identifier-length convention.
+    static constexpr auto fn = [](auto, TArgTuple args) -> lf::task<value_type>
+    {
+        // A user's const-reference parameters may refer into args. Its owning coroutine frame
+        // stays alive until the user task completes, including when this leaf is forked.
+        co_return co_await std::apply(
+            [](auto &&... values) { return lf::just[TFn{}](FW(values)...); }, std::move(args));
+    };
+
+    /**
+     * Construct from the stored argument tuple.
+     *
+     * @param arg_in Arguments to store.
+     */
+    constexpr explicit AsyncLeafProxy(TArgTuple arg_in) : arg{std::move(arg_in)} {}
+};
+
+/**
+ * Action wrapping an async leaf's arguments; invoking it materialises the proxy.
+ *
+ * @tparam TFn User's stateless coroutine function type.
+ * @tparam TArgTuple Stored argument tuple type.
+ */
+template <class TFn, class TArgTuple>
+struct AsyncLeafAction
+{
+    /// Arguments stored for the leaf.
+    TArgTuple arg;
+
+    /**
+     * Construct from the stored argument tuple.
+     *
+     * @param arg_in Arguments to store.
+     */
+    constexpr explicit AsyncLeafAction(TArgTuple arg_in) : arg{std::move(arg_in)} {}
+
+    /**
+     * Materialise the async leaf proxy.
+     *
+     * @param self The action to invoke (explicit object parameter).
+     * @return The async leaf proxy.
+     */
+    constexpr AsyncLeafProxy<TFn, TArgTuple> operator()(this auto && self)
+    {
+        return AsyncLeafProxy<TFn, TArgTuple>{FW(self).arg};
+    }
+};
+
+namespace detail
+{
+/**
+ * Traits validating the stateless coroutine function provided to `io::create_async`.
+ *
+ * @tparam name_cstr Null-terminated name of the IO instantiation, used in diagnostics. Must have
+ * static storage duration.
+ */
+template <char const * name_cstr>
+struct CreateAsyncIOTraits : CreateIOTraits<name_cstr>
+{
+    /**
+     * Validate the stateless coroutine function.
+     *
+     * The function must be a stateless class usable in constant expressions as
+     * `static constexpr TFn fn{}` (stateful coroutine functions dangle in libfork, which stores
+     * only a copy of the function object), invocable as an rvalue with a libfork-generated first
+     * argument and the stored argument tuple's element types, and produce a non-void `lf::task`.
+     * The rvalue receiver matches libfork's `std::move(fun)(self, args...)` entry invocation, so a
+     * captureless mutable coroutine lambda is accepted.
+     *
+     * @param fn_meta Reflection of the async function type.
+     * @param arg_tuple_meta Reflection of the stored argument tuple type.
+     * @return Empty string if validation passes, otherwise a string describing the error.
+     */
+    static consteval std::string_view validate_create_async(
+        std::meta::info fn_meta, std::meta::info arg_tuple_meta)
+    {
+        std::meta::info const target = dealias(remove_cvref(fn_meta));
+        // The proxy stores the function as a `static constexpr TFn`, which requires a class type.
+        if (!is_complete_type(target) || !is_class_type(target))
+        {
+            return "provided async function must be a class type";
+        }
+        if (!detail::is_empty_object(target))
+        {
+            return "provided async function must be stateless";
+        }
+        if (!is_default_constructible_type(target))
+        {
+            return "provided async function must be default-constructible";
+        }
+        // `static constexpr TFn fn{}` must be constant-initialisable, and the entry is also passed
+        // to libfork as a class-type non-type template argument, so the type must be usable in
+        // constant expressions and structural.
+        if (!can_substitute(^^detail::ConstexprDefaultProbe, {target}))
+        {
+            return "provided async function must be usable in constant expressions";
+        }
+        std::vector<std::meta::info> const args = detail::async_leaf_arg_metas(arg_tuple_meta);
+        if (!is_invocable_type(target, args))
+        {
+            return "provided async function is not invocable with the given arguments";
+        }
+        std::meta::info const result = dealias(invoke_result(target, args));
+        // `template_of` comparison is the same idiom as `is_io`; `lf::task` is an inline-namespace
+        // name.
+        if (!has_template_arguments(result) || template_of(result) != ^^lf::task)
+        {
+            return "provided async function must return an lf::task";
+        }
+        if (is_void_type(template_arguments_of(result)[0]))
+        {
+            return "provided async function must not return lf::task<void>";
+        }
+        return {};
+    }
+};
 }  // namespace detail
 }  // namespace fnfelt::monad::io
 

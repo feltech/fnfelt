@@ -13,6 +13,7 @@ target_precompile_headers(
   PRIVATE
   <meta>
   <fnfelt/monad/io/IO.hpp>
+  <fnfelt/monad/io/async.hpp>
   <fnfelt/monad/io/create.hpp>
   <fnfelt/monad/io/just.hpp>)
 
