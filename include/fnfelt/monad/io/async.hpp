@@ -27,6 +27,7 @@
 #include <libfork/core/task.hpp>
 #include <libfork/schedule/lazy_pool.hpp>
 
+#include <fnfelt/monad/io/create.hpp>
 #include <fnfelt/monad/io/detail.hpp>
 #include <fnfelt/monad/io/detail/async.hpp>
 #include <fnfelt/monad/io/detail/create.hpp>
@@ -36,6 +37,63 @@
 
 namespace fnfelt::monad::io
 {
+
+/**
+ * Creates an IO wrapping a stateless asynchronous coroutine function.
+ *
+ * The function is invoked as `fn(self, args...)`, where `self` is a libfork-generated first
+ * argument, and must return a non-void `lf::task`. The function must be stateless: libfork stores
+ * only a copy of the function object at run time, so a stateful function would dangle. The
+ * argument types are decayed, stored by value in the async proxy, and spread into `fn` when the
+ * proxy's coroutine entry runs.
+ *
+ * Plain side effects stay synchronous and still compose concurrently under `ap`; `create_async` is
+ * for leaves that must genuinely suspend into the pool (a forked blocking synchronous side still
+ * pins a worker).
+ *
+ * @tparam TTraits Traits used to validate the action and for the result IO, defaulting to
+ * detail::CreateAsyncIOTraits.
+ * @tparam TFn Deduced stateless coroutine function type.
+ * @tparam TArgs Deduced argument types (stored by value).
+ * @param fn The stateless coroutine function.
+ * @param args Arguments passed to the coroutine (moved/copied per value category).
+ * @return IO over the async leaf with TTraits.
+ */
+template <class TTraits = detail::CreateAsyncIOTraits<>, class TFn, class... TArgs>
+[[nodiscard]] constexpr auto create_async([[maybe_unused]] TFn fn, TArgs &&... args)
+{
+    using arg_tuple_type = std::tuple<std::decay_t<TArgs>...>;
+    static constexpr auto reason = TTraits::validate_create_async(^^TFn, ^^arg_tuple_type);
+    static_assert(reason.empty(), detail::create_async_error_msg<^^TFn>(TTraits::name, reason));
+    if constexpr (reason.empty())
+    {
+        using action_type = AsyncLeafAction<TFn, arg_tuple_type>;
+        // Qualified so a stored argument type mentioning other monads (e.g. a co-included
+        // ReaderIO) cannot make the enclosing namespace's factories reachable by ADL and bind
+        // ambiguously.
+        return io::create<TTraits>(action_type{arg_tuple_type{FW(args)...}});
+    }
+}
+
+/**
+ * Creates an IO wrapping a stateless asynchronous coroutine function, naming it for diagnostics.
+ *
+ * A function template, unlike class template argument deduction, may take its leading template
+ * argument explicitly while deducing the function and arguments. Overloads on the first template
+ * argument: a name (`char const *` non-type parameter) or a traits type.
+ *
+ * @tparam name_cstr Null-terminated name with static storage duration (e.g. `"My IO"_ss`).
+ * @tparam TFn Deduced stateless coroutine function type.
+ * @tparam TArgs Deduced argument types (stored by value).
+ * @param fn The stateless coroutine function.
+ * @param args Arguments passed to the coroutine (moved/copied per value category).
+ * @return IO over the async leaf with detail::CreateAsyncIOTraits<name_cstr>.
+ */
+template <char const * name_cstr, class TFn, class... TArgs>
+[[nodiscard]] constexpr auto create_async(TFn fn, TArgs &&... args)
+{
+    return io::create_async<detail::CreateAsyncIOTraits<name_cstr>>(std::move(fn), FW(args)...);
+}
 
 /**
  * Proxy that runs an IO's action.

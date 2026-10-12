@@ -202,6 +202,56 @@ struct LvalueRunTraits : fnfelt::monad::io::detail::CreateIOTraits<>
     }
 };
 
+/// Stateless async function doubling its argument.
+inline constexpr auto async_double = [](auto, int x) -> lf::task<int> { co_return x * 2; };
+
+/// Stateless async function producing a pair, for spread dispatch.
+inline constexpr auto async_pair = [](auto, int x) -> lf::task<std::pair<int, int>>
+{ co_return std::pair{x, x + 1}; };
+
+/// Stateless async function consuming and producing a move-only value.
+inline constexpr auto async_unique_from =
+    [](auto, std::unique_ptr<int> ptr) -> lf::task<std::unique_ptr<int>>
+{ co_return std::make_unique<int>(*ptr * 3); };
+
+/// Stateless async function that throws, for exception propagation.
+inline constexpr auto async_throwing = [](auto, int) -> lf::task<int>
+{
+    throw std::runtime_error{"async failure"};
+    co_return 0;
+};
+
+/// Stateless async function taking a copy-tracking argument.
+inline constexpr auto async_track = [](auto, CopyTrackingArg arg) -> lf::task<int>
+{ co_return arg.value; };
+
+/// Stateless coroutine functor with a deleted default constructor, for async-function validation.
+struct DeletedDefaultCtorFn
+{
+    DeletedDefaultCtorFn() = delete;
+    auto operator()(auto, int x) const -> lf::task<int>;
+};
+
+inline constexpr char async_io_name[] = "AsyncIO";
+using AsyncIOTraits = fnfelt::monad::io::detail::CreateAsyncIOTraits<async_io_name>;
+
+/// Custom traits delegating to CreateAsyncIOTraits, for the create_async injection point.
+struct DelegatingCreateAsyncTraits : fnfelt::monad::io::detail::CreateIOTraits<>
+{
+    static constexpr std::string_view name = "DelegatingCreateAsyncIO";
+
+    static consteval std::string_view validate_action(std::meta::info action_meta)
+    {
+        return fnfelt::monad::io::detail::CreateIOTraits<>::validate_action(action_meta);
+    }
+
+    static consteval std::string_view validate_create_async(
+        std::meta::info fn_meta, std::meta::info arg_tuple_meta)
+    {
+        return fnfelt::monad::io::detail::CreateAsyncIOTraits<>::validate_create_async(
+            fn_meta, arg_tuple_meta);
+    }
+};
 }  // namespace
 
 TEST_CASE("CreateIOTraits validates run proxy consumption and async scheduler arguments")
@@ -340,6 +390,95 @@ TEST_CASE("IORunProxy moves rvalue actions and copies lvalue actions")
     CHECK_EQ(const_io.build().sync_wait(), 1);
     CHECK_EQ(CopyTrackingAction::moves, 0);
     CHECK_EQ(CopyTrackingAction::copies, 1);
+}
+
+TEST_CASE("create_async wraps a stateless coroutine function into a runnable IO")
+{
+    auto io = fnfelt::monad::io::create_async(async_double, 21);
+    static_assert(std::is_same_v<decltype(io)::value_type, int>);
+
+    CHECK_EQ(io.build().sync_wait(), 42);
+    // An explicit scheduler is forwarded to the whole async tree.
+    CHECK_EQ(io.build().sync_wait(lf::lazy_pool{2}), 42);
+}
+
+TEST_CASE("create_async can name the IO and take explicit traits")
+{
+    using namespace fnfelt::literals;  // NOLINT
+
+    auto named = fnfelt::monad::io::create_async<"Async named"_ss>(async_double, 21);
+    static_assert(decltype(named)::traits::name == "Async named");
+    CHECK_EQ(named.build().sync_wait(), 42);
+
+    auto custom = fnfelt::monad::io::create_async<AsyncIOTraits>(async_double, 21);
+    static_assert(std::is_same_v<decltype(custom)::traits, AsyncIOTraits>);
+    CHECK_EQ(custom.build().sync_wait(), 42);
+}
+
+TEST_CASE("create_async consults custom traits that delegate to the default")
+{
+    auto io = fnfelt::monad::io::create_async<DelegatingCreateAsyncTraits>(async_double, 21);
+    static_assert(std::is_same_v<decltype(io)::traits, DelegatingCreateAsyncTraits>);
+    static_assert(std::is_same_v<decltype(io)::value_type, int>);
+    CHECK_EQ(io.build().sync_wait(), 42);
+}
+
+TEST_CASE("an exception thrown by an async leaf propagates to the caller")
+{
+    auto io = fnfelt::monad::io::create_async(async_throwing, 1);
+    CHECK_THROWS_AS(static_cast<void>(io.build().sync_wait()), std::runtime_error);
+}
+
+TEST_CASE("CreateAsyncIOTraits::validate_create_async reports the first blocking constraint")
+{
+    // A plain function pointer is stateless and default-constructible, but not a class type, so it
+    // cannot be stored as the proxy's `static constexpr TFn`.
+    static_assert(
+        fnfelt::monad::io::detail::CreateAsyncIOTraits<>::validate_create_async(
+            ^^int (*)(int), ^^std::tuple<int>) == "provided async function must be a class type");
+
+    // A stateless functor with a deleted default constructor fails the `static constexpr TFn`
+    // requirement.
+    static_assert(
+        fnfelt::monad::io::detail::CreateAsyncIOTraits<>::validate_create_async(
+            ^^DeletedDefaultCtorFn, ^^std::tuple<int>) ==
+        "provided async function must be default-constructible");
+
+    // A capturing closure is a class with state, so it is rejected as stateless before the
+    // default-constructibility check.
+    int const state = 1;
+    auto const capturing = [state](auto, int x) -> lf::task<int> { co_return x + state; };
+    static_assert(
+        fnfelt::monad::io::detail::CreateAsyncIOTraits<>::validate_create_async(
+            ^^decltype(capturing), ^^std::tuple<int>) ==
+        "provided async function must be stateless");
+}
+
+TEST_CASE("running an async leaf twice from an lvalue copies its state per run")
+{
+    auto io = fnfelt::monad::io::create_async(async_track, CopyTrackingArg{});
+
+    CopyTrackingArg::copies = 0;
+    CopyTrackingArg::moves = 0;
+    CHECK_EQ(io.build().sync_wait(), 1);
+    int const copies_after_one_run = CopyTrackingArg::copies;
+    CHECK_EQ(io.build().sync_wait(), 1);
+
+    // Each `io.build()` on an lvalue copies the action (and its stored argument) into the
+    // IORunProxy; from there the async machinery moves the argument, so each run adds exactly one
+    // copy and the caller's IO is left untouched. Two runs therefore cost two copies.
+    CHECK_EQ(copies_after_one_run, 1);
+    CHECK_EQ(CopyTrackingArg::copies, 2);
+}
+
+TEST_CASE("create_async accepts a captureless mutable coroutine lambda")
+{
+    // libfork copies the coroutine function and invokes the copy as an rvalue, so a mutable
+    // (non-const) call operator is accepted even though the proxy stores `fn` as a const static
+    // member.
+    auto io = fnfelt::monad::io::create_async(
+        [](auto, int value) mutable -> lf::task<int> { co_return value; }, 42);
+    CHECK_EQ(io.build().sync_wait(), 42);
 }
 
 TEST_CASE("IORunProxy executes a custom async proxy")
