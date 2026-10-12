@@ -923,5 +923,41 @@ TEST_CASE("JustIOTraits::validate_just checks the lifted value")
         "provided value must be copy constructible");
 }
 
+namespace
+{
+/// Stateless coroutine functor whose default constructor is not constexpr - cannot be stored as
+/// the proxy's `static constexpr TFn`.
+struct NonConstexprDefaultCtorFn
+{
+    NonConstexprDefaultCtorFn();
+    auto operator()(auto, int value) const -> lf::task<int>;
+};
+
+/// Stateless coroutine functor callable only as an lvalue - incompatible with libfork's rvalue
+/// entry invocation.
+struct LvalueOnlyFn
+{
+    auto operator()(auto, int value) & -> lf::task<int>;
+};
+}  // namespace
+
+TEST_CASE("CreateAsyncIOTraits::validate_create_async checks constant-expression usability")
+{
+    using CreateAsyncIOTraits = fnfelt::monad::io::CreateAsyncIOTraits<>;
+
+    // `static constexpr TFn fn{}` requires the default constructor to be usable in constant
+    // expressions, which a plain default-constructible type with a non-constexpr constructor is
+    // not.
+    static_assert(
+        CreateAsyncIOTraits::validate_create_async(
+            ^^NonConstexprDefaultCtorFn, ^^std::tuple<int>) ==
+        "provided async function must be usable in constant expressions");
+    // libfork invokes the stored function as `std::move(fun)(self, args...)`, so an lvalue-only
+    // call operator is rejected by the bare-type (rvalue receiver) invocability check.
+    static_assert(
+        CreateAsyncIOTraits::validate_create_async(^^LvalueOnlyFn, ^^std::tuple<int>) ==
+        "provided async function is not invocable with the given arguments");
+}
+
 // NOLINTEND(*-magic-numbers)
 #endif  // DOCTEST_CONFIG_DISABLE

@@ -63,6 +63,33 @@ consteval void append_string_view(std::string & target, std::string_view view)
 }
 
 /**
+ * Check whether a reflection is of an empty class type.
+ *
+ * A stateless object holds no state: it has no non-static data members in itself or in any base.
+ * Virtual functions and virtual bases also count as state for this check. This is how a stateless
+ * callable (e.g. a non-capturing lambda) is recognised.
+ *
+ * @param type_meta Reflection of the type to check.
+ * @return True if the type is a complete, non-polymorphic class type with no non-static data
+ * members anywhere.
+ */
+consteval bool is_empty_object(std::meta::info type_meta)
+{
+    // Member queries do not see through cv-ref qualifiers, so strip them first.
+    type_meta = dealias(remove_cvref(type_meta));
+    // `is_complete_type` returns false (rather than throwing) for non-type reflections, so it
+    // guards the `is_class_type` category query.
+    if (!is_complete_type(type_meta) || !is_class_type(type_meta))
+    {
+        return false;
+    }
+    // `is_empty_type` reports no non-static data members, bases included. The obvious
+    // `nonstatic_data_members_of` walk does NOT work for closures on gcc 16.2: it reports zero
+    // members for a capturing lambda, so a stateful async function would slip through.
+    return is_empty_type(type_meta);
+}
+
+/**
  * Reflection of the value an action produces when run.
  *
  * An asynchronous action's value comes from its proxy's `value_type` alias.

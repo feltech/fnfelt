@@ -185,17 +185,17 @@ consteval std::string transform_error_msg(std::string_view io_name, std::string_
     std::string msg;
     msg += "fnfelt: ";
     msg += "IO transform error: ";
-    msg += io_name;
+    append_string_view(msg, io_name);
     msg += "{(";
-    msg += maybe_io_name<source_io_meta>();
+    append_string_view(msg, maybe_io_name<source_io_meta>());
     msg += "()) => ";
-    msg += maybe_transformer_result_name<source_io_meta, transformer_meta>();
+    append_string_view(msg, maybe_transformer_result_name<source_io_meta, transformer_meta>());
     msg += "}: ";
-    msg += reason;
+    append_string_view(msg, reason);
     msg += ": ";
     std::meta::info const target_meta =
         !detail::is_io(source_io_meta) ? source_io_meta : transformer_meta;
-    msg += display_string_of(target_meta);
+    append_string_view(msg, display_string_of(target_meta));
 
     return msg;
 }

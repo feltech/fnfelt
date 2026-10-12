@@ -76,6 +76,10 @@ struct TransformIOTraits;
 template <char const * name_cstr = detail::default_io_name>
 struct ApIOTraits;
 
+/// Traits validating the stateless coroutine function provided to `io::create_async`.
+template <char const * name_cstr = detail::default_io_name>
+struct CreateAsyncIOTraits;
+
 template <class TAction, class TTraits = CreateIOTraits<>>
 class IO;
 
