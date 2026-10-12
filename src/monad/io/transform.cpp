@@ -187,6 +187,49 @@ consteval int constexpr_pipeline_ap_transform()
             .transform([](int x) { return x + 1; });
     return applied.build().sync_wait();
 }
+
+/// Stateless async function doubling its argument.
+inline constexpr auto async_double = [](auto, int value) -> lf::task<int> { co_return value * 2; };
+
+/// Stateless async function producing a pair, for spread dispatch.
+inline constexpr auto async_pair = [](auto, int value) -> lf::task<std::pair<int, int>>
+{ co_return std::pair{value, value + 1}; };
+
+/// Stateless async function consuming and producing a move-only value.
+inline constexpr auto async_unique_from =
+    [](auto, std::unique_ptr<int> ptr) -> lf::task<std::unique_ptr<int>>
+{ co_return std::make_unique<int>(*ptr * 3); };
+
+/// Stateless async function yielding its argument unchanged.
+inline constexpr auto async_identity = [](auto, int value) -> lf::task<int> { co_return value; };
+
+/// Stateless functor incrementing its argument, produced by an async function.
+struct Increment
+{
+    constexpr int operator()(int value) const
+    {
+        return value + 1;
+    }
+};
+
+/// Stateless async function producing an incrementing callable.
+inline constexpr auto async_fn_increment = [](auto, int) -> lf::task<Increment>
+{ co_return Increment{}; };
+
+/// Movable stateful functor scaling then adding, produced by an async function.
+struct ScaleAndAdd
+{
+    int scale = 0;
+
+    constexpr int operator()(int value) const
+    {
+        return scale * 100 + value;
+    }
+};
+
+/// Stateless async function producing a scaling callable.
+inline constexpr auto async_fn_scale = [](auto, int scale) -> lf::task<ScaleAndAdd>
+{ co_return ScaleAndAdd{scale}; };
 }  // namespace
 
 TEST_CASE("IO transform applies a direct transformer to the source's value")
@@ -578,6 +621,130 @@ TEST_CASE("detail::maybe_transformer_result_name reflects a transform applicatio
     static_assert(maybe_transformer_result_name<^^value_io_type, ^^Incomplete>() == "<unknown>");
     // Non-IO source: no result determinable.
     static_assert(maybe_transformer_result_name<^^int, ^^transformer_type>() == "<unknown>");
+}
+
+TEST_CASE("transform runs directly over an async source")
+{
+    // The transformer is applied to the async source's unwrapped value: 10 -> async(*2)=20 ->
+    // +1=21.
+    auto transformed =
+        fnfelt::monad::io::create_async(async_double, 10).transform([](int x) { return x + 1; });
+    static_assert(std::is_same_v<decltype(transformed)::value_type, int>);
+    CHECK_EQ(transformed.build().sync_wait(), 21);
+}
+
+TEST_CASE("transform runs over an async source nested in an async chain")
+{
+    // and_then over an async source whose continuation returns a transform over another async
+    // source. The nested transform must join the surrounding async tree; running it inline spins up
+    // its own scheduler from a worker thread. 10 -> async(*2)=20 -> transform(async(*2) + 1)=41.
+    auto nested = fnfelt::monad::io::create_async(async_double, 10)
+                      .and_then(
+                          [](int x)
+                          {
+                              return fnfelt::monad::io::create_async(async_double, x)
+                                  .transform([](int y) { return y + 1; });
+                          });
+    CHECK_EQ(nested.build().sync_wait(lf::lazy_pool{2}), 41);
+}
+
+TEST_CASE("transform spreads a pair produced by an async source")
+{
+    // The pair produced by the async leaf is spread through the dealiased async value type.
+    auto spread = fnfelt::monad::io::create_async(async_pair, 3)
+                      .transform([](int lhs, int rhs) { return lhs * 10 + rhs; });
+    static_assert(std::is_same_v<decltype(spread)::value_type, int>);
+    CHECK_EQ(spread.build().sync_wait(), 34);
+}
+
+TEST_CASE("transform invokes an async transformer as an rvalue")
+{
+    // Ref-qualified transformer: the `&&` overload is the one validation, inference and the driver
+    // must all select, so the composition's value is long (2) rather than int (1).
+    struct RefQualifiedTransformer
+    {
+        int operator()([[maybe_unused]] int value) const &
+        {
+            return 1;
+        }
+
+        // NOLINTNEXTLINE(runtime/int): the `&&` overload returns the fundamental `long`.
+        long operator()([[maybe_unused]] int value) &&
+        {
+            return 2;
+        }
+    };
+
+    auto transformed =
+        fnfelt::monad::io::create_async(async_double, 10).transform(RefQualifiedTransformer{});
+    // NOLINTNEXTLINE(runtime/int): the `&&` overload returns the fundamental `long`.
+    static_assert(std::is_same_v<decltype(transformed)::value_type, long>);
+    CHECK_EQ(transformed.build().sync_wait(lf::lazy_pool{2}), 2L);
+}
+
+TEST_CASE("transform carries an async move-only value into a transformer")
+{
+    auto transformed = fnfelt::monad::io::create_async(async_unique_from, std::make_unique<int>(4))
+                           .transform([](std::unique_ptr<int> ptr) { return *ptr + 1; });
+    static_assert(std::is_same_v<decltype(transformed)::value_type, int>);
+    // The leaf stores a move-only argument, so the composed action and its IO are move-only.
+    static_assert(!std::is_copy_constructible_v<decltype(transformed)>);
+    CHECK_EQ(std::move(transformed).build().sync_wait(), 13);
+}
+
+TEST_CASE("transform composes with and_then and ap across alternating sync and async levels")
+{
+    // Outer async ap: Increment(async 1) = 2. Nested transform over an async source: *2 + 1 = 5.
+    // Middle sync and_then: *10 = 50. Inner async ap: ScaleAndAdd{50}(async 7) = 5007.
+    auto pipeline =
+        fnfelt::monad::io::ap(
+            fnfelt::monad::io::create_async(async_fn_increment, 0),
+            fnfelt::monad::io::create_async(async_identity, 1))
+            .and_then(
+                [](int x)
+                {
+                    return fnfelt::monad::io::create_async(async_double, x)
+                        .transform([](int y) { return y + 1; });
+                })
+            .and_then([](int x) { return fnfelt::monad::io::create([x] { return x * 10; }); })
+            .and_then(
+                [](int x)
+                {
+                    return fnfelt::monad::io::ap(
+                        fnfelt::monad::io::create_async(async_fn_scale, x),
+                        fnfelt::monad::io::create_async(async_identity, 7));
+                });
+    CHECK_EQ(pipeline.build().sync_wait(lf::lazy_pool{2}), 5007);
+}
+
+TEST_CASE("transform consults custom traits that delegate to the default on the async path")
+{
+    auto transformed = fnfelt::monad::io::transform<DelegatingTransformTraits>(
+        fnfelt::monad::io::create_async(async_double, 10), [](int x) { return x + 1; });
+    static_assert(std::is_same_v<decltype(transformed)::traits, DelegatingTransformTraits>);
+    CHECK_EQ(transformed.build().sync_wait(lf::lazy_pool{2}), 21);
+}
+
+TEST_CASE("transform detects an async source and keeps the transformer's result type")
+{
+    using fnfelt::monad::io::detail::action_is_async;
+
+    // A transform over an async source must take the async arm, so its action materialises an async
+    // proxy.
+    using async_transformed_io = decltype(fnfelt::monad::io::create_async(async_double, 10)
+                                              .transform([](int x) { return x + 1; }));
+    static_assert(action_is_async(^^async_transformed_io::action_type));
+
+    // The composed result's value is the transformer's result type.
+    static_assert(std::is_same_v<async_transformed_io::value_type, int>);
+    using string_transformed_io = decltype(fnfelt::monad::io::create_async(async_double, 10)
+                                               .transform([](int x) { return std::to_string(x); }));
+    static_assert(std::is_same_v<string_transformed_io::value_type, std::string>);
+
+    // A transform over a sync source stays on the sync arm.
+    using sync_transformed_io = decltype(fnfelt::monad::io::create([] { return 10; })
+                                             .transform([](int x) { return x + 1; }));
+    static_assert(!action_is_async(^^sync_transformed_io::action_type));
 }
 
 // NOLINTEND(*-magic-numbers)

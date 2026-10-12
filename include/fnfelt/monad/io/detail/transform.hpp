@@ -23,6 +23,11 @@
 
 namespace fnfelt::monad::io
 {
+// Forward declaration for the detail helpers below, which reflect on the proxy. The proxy itself
+// is defined alongside the free functions.
+template <class TSourceIO, class TTransformer>
+struct TransformProxy;
+
 namespace detail
 {
 
@@ -37,13 +42,16 @@ struct TransformError
 };
 
 /**
- * Reflection of the value a TransformAction produces when run.
+ * Reflection of the value a transform action produces when run.
  *
- * The transformer is applied with the source's value directly when possible, otherwise the value
- * is spread into it (direct invocation wins over spreading), mirroring the action's dispatch.
+ * The transformer is applied with the source's value directly when possible, otherwise the value is
+ * spread into it (direct invocation wins over spreading), mirroring the action's dispatch. The
+ * value is unwrapped through async proxies, so this works for both sync and async IOs.
  *
- * Used as the action's declared return type so that validating the action never instantiates its
- * body, which would otherwise require copying a move-only nested action for the const receiver.
+ * Computes the synchronous composition's result, which `transform_result_type_meta` delegates to on
+ * the sync path and which types the async proxy's value. Deriving those declared types from it
+ * keeps validating the action from instantiating its body, which would otherwise require copying a
+ * move-only nested action for the const receiver.
  *
  * @tparam TSourceIO Source IO to run.
  * @tparam TTransformer Transformer taking the source's value and returning a plain value.
@@ -65,13 +73,53 @@ consteval std::meta::info transform_result_meta()
 }
 
 /**
+ * Whether a transform composition must run asynchronously.
+ *
+ * The composition is asynchronous when the source IO's action is asynchronous. A transformer
+ * returns a plain value, never an IO, so only the source can make the composition asynchronous. The
+ * result type and the action's run-time dispatch both derive from this predicate, keeping them in
+ * sync.
+ *
+ * @tparam TSourceIO Source IO to run.
+ * @tparam TTransformer Transformer taking the source's value and returning a plain value.
+ * @return True if the composition runs asynchronously.
+ */
+template <class TSourceIO, class TTransformer>
+consteval bool transform_is_async()
+{
+    return action_is_async(io_action_meta(^^TSourceIO));
+}
+
+/**
+ * Reflection of the value a TransformAction's declared return type names.
+ *
+ * Synchronous compositions produce a plain value; asynchronous ones produce the composed async
+ * proxy.
+ *
+ * @tparam TSourceIO Source IO to run.
+ * @tparam TTransformer Transformer taking the source's value and returning a plain value.
+ * @return Reflection of the action's declared return type.
+ */
+template <class TSourceIO, class TTransformer>
+consteval std::meta::info transform_result_type_meta()
+{
+    if constexpr (transform_is_async<TSourceIO, TTransformer>())
+    {
+        return ^^TransformProxy<TSourceIO, TTransformer>;
+    }
+    return transform_result_meta<TSourceIO, TTransformer>();
+}
+
+/**
  * Action that runs a source IO and feeds its value to a transformer, keeping the plain result.
  *
- * The transformer is invoked with the value directly when possible, otherwise the value is spread
- * into the transformer as if by `std::apply` (direct invocation wins over spreading), exactly like
- * `AndThenAction`. Unlike `AndThenAction`, the transformer's result is returned directly rather
- * than run as an IO. The action's value category is forwarded to the source and transformer, so
- * running an rvalue moves captures. The transformer must still be callable as a const lvalue.
+ * Synchronous compositions run the source inline and produce a plain value; asynchronous ones
+ * instead materialise the composed async proxy so that the whole tree runs under a single top-level
+ * scheduler. The transformer is invoked with the value directly when possible, otherwise the value
+ * is spread into the transformer as if by `std::apply` (direct invocation wins over spreading),
+ * exactly like `AndThenAction`. Unlike `AndThenAction`, the transformer's result is returned
+ * directly rather than run as an IO. The action's value category is forwarded to the source, and
+ * the stored transformer is invoked as an rvalue, matching validation and result inference.
  *
  * @tparam TSourceIO Source IO to run.
  * @tparam TTransformer Transformer taking the source's value and returning a plain value.
@@ -79,8 +127,8 @@ consteval std::meta::info transform_result_meta()
 template <class TSourceIO, class TTransformer>
 struct TransformAction
 {
-    /// Value the action produces when run.
-    using result_type = [:transform_result_meta<TSourceIO, TTransformer>():];
+    /// Value the action produces when run (async proxy or plain value).
+    using result_type = [:transform_result_type_meta<TSourceIO, TTransformer>():];
     /// Source IO to run.
     TSourceIO source;
     /// Transformer applied to the source's value.
@@ -91,19 +139,27 @@ struct TransformAction
      *
      * @param self The action to run (explicit object parameter).
      *
-     * @return The transformer's plain result.
+     * @return The composed async proxy, or the transformer's plain result on the synchronous path.
      */
     constexpr auto operator()(this auto && self) -> result_type
     {
-        using source_value_type = TSourceIO::value_type;
-        auto input = FW(self).source.build().sync_wait();
-        if constexpr (is_directly_invocable(^^TTransformer, ^^source_value_type))
+        if constexpr (transform_is_async<TSourceIO, TTransformer>())
         {
-            return FW(self).transformer(std::move(input));
+            return result_type{
+                std::tuple<TSourceIO, TTransformer>{FW(self).source, FW(self).transformer}};
         }
-        if constexpr (is_spread_invocable(^^TTransformer, ^^source_value_type))
+        if constexpr (!transform_is_async<TSourceIO, TTransformer>())
         {
-            return std::apply(FW(self).transformer, std::move(input));
+            using source_value_type = TSourceIO::value_type;
+            auto input = FW(self).source.build().sync_wait();
+            if constexpr (is_directly_invocable(^^TTransformer, ^^source_value_type))
+            {
+                return FW(self).transformer(std::move(input));
+            }
+            if constexpr (is_spread_invocable(^^TTransformer, ^^source_value_type))
+            {
+                return std::apply(FW(self).transformer, std::move(input));
+            }
         }
         // Not reachable: validation guarantees one of the dispatches above is taken.
         std::unreachable();

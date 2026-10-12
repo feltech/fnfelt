@@ -5,14 +5,15 @@
 /**
  * @file async.hpp
  *
- * Asynchronous IO: run proxy, async leaves and async/mixed `and_then` composition.
+ * Asynchronous IO: run proxy, async leaves and async/mixed `and_then`, `ap` and `transform`
+ * composition.
  *
  * `IO::build()` yields a `RunProxy` holding the IO's action; calling `sync_wait` on it is the
  * only execution path. Asynchronous actions run on libfork; `create_async` wraps a stateless
- * coroutine function into an IO and `and_then` composes sync and async IOs transparently. Values
- * produced inside asynchronous composition must be movable (move constructible and assignable),
- * since they are returned through `lf::task`; this includes the sync sides composed into an async
- * `ap` (e.g. a capturing lambda cannot be such a value).
+ * coroutine function into an IO and `and_then`, `ap` and `transform` compose sync and async IOs
+ * transparently. Values produced inside asynchronous composition must be movable (move
+ * constructible and assignable), since they are returned through `lf::task`; this includes the sync
+ * sides composed into an async `ap` (e.g. a capturing lambda cannot be such a value).
  */
 #pragma once
 
