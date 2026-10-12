@@ -14,13 +14,17 @@
 
 #include <meta>
 
+#include <functional>
 #include <string>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 
+#include <libfork/core/task.hpp>
+
 #include <fnfelt/monad/io/IO.hpp>
+#include <fnfelt/monad/io/async.hpp>
 #include <fnfelt/monad/io/create.hpp>
 #include <fnfelt/monad/io/detail.hpp>
 #include <fnfelt/monad/io/detail/and_then.hpp>
@@ -30,6 +34,64 @@
 
 namespace fnfelt::monad::io
 {
+
+/**
+ * Async proxy composing a source IO with a continuation (async/mixed `and_then`).
+ *
+ * The driver runs the source IO, applies the continuation to its value with the same direct-vs-
+ * spread dispatch as the synchronous action, then runs the continuation's IO.
+ *
+ * @tparam TSourceIO Source IO to run.
+ * @tparam TContinuation Continuation taking the source's value and returning an IO.
+ */
+template <class TSourceIO, class TContinuation>
+struct AndThenProxy : AsyncProxyTag
+{
+    /// Value the composed IO produces.
+    using value_type = [:detail::and_then_result_meta<TSourceIO, TContinuation>():];
+    /// Source IO and continuation spread into @ref fn.
+    std::tuple<TSourceIO, TContinuation> arg;
+    /// Reflection of the source's value.
+    // Dispatch is computed here, at class scope, because gcc 16.2 rejects reflection queries in a
+    // lambda's `if constexpr` condition.
+    static constexpr std::meta::info source_value_meta = detail::io_value_meta(^^TSourceIO);
+    /// Whether the continuation is applied directly to the source's value.
+    static constexpr bool is_direct_dispatch =
+        detail::is_directly_invocable(^^TContinuation, source_value_meta);
+    /// Whether the continuation is applied by spreading the value's template arguments.
+    static constexpr bool is_spread_dispatch =
+        !is_direct_dispatch && detail::is_spread_invocable(^^TContinuation, source_value_meta);
+    /// Async/mixed composition driver.
+    static constexpr auto fn =
+        [](auto, TSourceIO source, TContinuation continuation) -> lf::task<value_type>
+    {
+        auto input = co_await detail::just_child(std::move(source));
+        // Direct invocation wins over spreading, mirroring the synchronous action. The stored
+        // continuation is moved into the call so the receiver matches validation and inference.
+        if constexpr (is_direct_dispatch)
+        {
+            auto next = std::invoke(std::move(continuation), std::move(input));
+            co_return co_await detail::just_child(std::move(next));
+        }
+        if constexpr (is_spread_dispatch)
+        {
+            auto next = std::apply(std::move(continuation), std::move(input));
+            co_return co_await detail::just_child(std::move(next));
+        }
+        // Not reachable: validation guarantees one of the dispatches above is taken.
+        std::unreachable();
+    };
+
+    /**
+     * Construct from the source IO and continuation.
+     *
+     * @param arg_in Source IO and continuation to store.
+     */
+    constexpr explicit AndThenProxy(std::tuple<TSourceIO, TContinuation> arg_in)
+        : arg{std::move(arg_in)}
+    {
+    }
+};
 
 /**
  * Chains a continuation to a source IO, producing an IO of the continuation's value.

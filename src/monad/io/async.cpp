@@ -205,6 +205,15 @@ consteval int constexpr_sync_chain_with_async()
 /// Stateless async function doubling its argument.
 inline constexpr auto async_double = [](auto, int x) -> lf::task<int> { co_return x * 2; };
 
+/// Stateless async function producing a pair, for spread dispatch.
+inline constexpr auto async_pair = [](auto, int x) -> lf::task<std::pair<int, int>>
+{ co_return std::pair{x, x + 1}; };
+
+/// Stateless async function consuming and producing a move-only value.
+inline constexpr auto async_unique_from =
+    [](auto, std::unique_ptr<int> ptr) -> lf::task<std::unique_ptr<int>>
+{ co_return std::make_unique<int>(*ptr * 3); };
+
 /// Stateless async function that throws, for exception propagation.
 inline constexpr auto async_throwing = [](auto, int) -> lf::task<int>
 {
@@ -225,6 +234,23 @@ struct DeletedDefaultCtorFn
 
 inline constexpr char async_io_name[] = "AsyncIO";
 using AsyncIOTraits = CreateAsyncIOTraits<async_io_name>;
+
+/// Custom traits delegating to the default traits, for the async and_then injection point.
+struct DelegatingAndThenTraits
+{
+    static constexpr std::string_view name = "DelegatingAndThenIO";
+
+    static consteval std::string_view validate_action(std::meta::info action_meta)
+    {
+        return fnfelt::monad::io::CreateIOTraits<>::validate_action(action_meta);
+    }
+
+    static consteval std::string_view validate_and_then(
+        std::meta::info io_meta, std::meta::info continuation_meta)
+    {
+        return fnfelt::monad::io::AndThenIOTraits<>::validate_and_then(io_meta, continuation_meta);
+    }
+};
 
 /// Custom traits delegating to CreateAsyncIOTraits, for the create_async injection point.
 struct DelegatingCreateAsyncTraits
@@ -402,10 +428,123 @@ TEST_CASE("create_async consults custom traits that delegate to the default")
     CHECK_EQ(io.build().sync_wait(), 42);
 }
 
+TEST_CASE("and_then runs sync continuations over async sources and vice versa")
+{
+    using fnfelt::monad::io::detail::action_is_async;
+
+    // Sync over async through the free function: 10 -> async(*2)=20 -> sync(+1)=21.
+    auto sync_over_async = fnfelt::monad::io::and_then(
+        fnfelt::monad::io::create_async(async_double, 10),
+        [](int x) { return fnfelt::monad::io::create([x] { return x + 1; }); });
+    // A mixed composition containing an async source must take the async arm.
+    static_assert(action_is_async(^^decltype(sync_over_async)::action_type));
+    CHECK_EQ(sync_over_async.build().sync_wait(), 21);
+
+    // Async over sync through the IO member: 5 -> sync -> async(*10)=50.
+    auto async_over_sync =
+        fnfelt::monad::io::create([] { return 5; })
+            .and_then(
+                [](int x)
+                {
+                    return fnfelt::monad::io::create_async(
+                        [](auto, int y) -> lf::task<int> { co_return y * 10; }, x);
+                });
+    // A mixed composition containing an async continuation must take the async arm.
+    static_assert(action_is_async(^^decltype(async_over_sync)::action_type));
+    CHECK_EQ(async_over_sync.build().sync_wait(), 50);
+}
+
+TEST_CASE("and_then consults custom traits that delegate to the default on the async path")
+{
+    using fnfelt::monad::io::detail::action_is_async;
+
+    auto bound = fnfelt::monad::io::and_then<DelegatingAndThenTraits>(
+        fnfelt::monad::io::create_async(async_double, 10),
+        [](int x) { return fnfelt::monad::io::create([x] { return x + 1; }); });
+    static_assert(std::is_same_v<decltype(bound)::traits, DelegatingAndThenTraits>);
+    static_assert(action_is_async(^^decltype(bound)::action_type));
+    CHECK_EQ(bound.build().sync_wait(lf::lazy_pool{2}), 21);
+}
+
+TEST_CASE("and_then composes a deep alternating sync and async chain")
+{
+    using fnfelt::monad::io::detail::action_is_async;
+
+    // 1 -> async(*2)=2 -> sync(+1)=3 -> async(*2)=6 -> sync(*2)=12, under one scheduler.
+    auto chain =
+        fnfelt::monad::io::create([] { return 1; })
+            .and_then([](int x) { return fnfelt::monad::io::create_async(async_double, x); })
+            .and_then([](int x) { return fnfelt::monad::io::create([x] { return x + 1; }); })
+            .and_then([](int x) { return fnfelt::monad::io::create_async(async_double, x); })
+            .and_then([](int x) { return fnfelt::monad::io::create([x] { return x * 2; }); });
+    // The alternating chain contains async hops throughout, so the whole composition stays async.
+    static_assert(action_is_async(^^decltype(chain)::action_type));
+    CHECK_EQ(chain.build().sync_wait(lf::lazy_pool{2}), 12);
+}
+
+TEST_CASE("and_then carries an async move-only value into a continuation")
+{
+    auto bound = fnfelt::monad::io::create_async(async_unique_from, std::make_unique<int>(4))
+                     .and_then([](std::unique_ptr<int> ptr)
+                               { return fnfelt::monad::io::create([v = *ptr] { return v + 1; }); });
+    static_assert(std::is_same_v<decltype(bound)::value_type, int>);
+    // The leaf stores a move-only argument, so the composed action and its IO are move-only.
+    static_assert(!std::is_copy_constructible_v<decltype(bound)>);
+    CHECK_EQ(std::move(bound).build().sync_wait(), 13);
+}
+
+TEST_CASE("and_then spreads an async value into a multi-argument continuation")
+{
+    // The pair produced by the async leaf is spread through the dealiased async value type.
+    auto spread =
+        fnfelt::monad::io::create_async(async_pair, 3)
+            .and_then([](int lhs, int rhs)
+                      { return fnfelt::monad::io::create([lhs, rhs] { return lhs * 10 + rhs; }); });
+    CHECK_EQ(spread.build().sync_wait(), 34);
+}
+
+TEST_CASE("and_then invokes an async continuation as an rvalue")
+{
+    // Ref-qualified continuation: the `&&` overload is the one validation, inference and the
+    // driver must all select, so the composition's value is long (2) rather than int (1).
+    struct RefQualifiedContinuation
+    {
+        auto operator()([[maybe_unused]] int value) const &
+        {
+            return fnfelt::monad::io::create([] { return 1; });
+        }
+
+        auto operator()([[maybe_unused]] int value) &&
+        {
+            return fnfelt::monad::io::create([] { return 2L; });
+        }
+    };
+
+    auto bound =
+        fnfelt::monad::io::create_async(async_double, 10).and_then(RefQualifiedContinuation{});
+    // NOLINTNEXTLINE(runtime/int): the `&&` overload returns the fundamental `long`.
+    static_assert(std::is_same_v<decltype(bound)::value_type, long>);
+    CHECK_EQ(bound.build().sync_wait(lf::lazy_pool{2}), 2L);
+}
+
 TEST_CASE("an exception thrown by an async leaf propagates to the caller")
 {
     auto io = fnfelt::monad::io::create_async(async_throwing, 1);
     CHECK_THROWS_AS(static_cast<void>(io.build().sync_wait()), std::runtime_error);
+}
+
+TEST_CASE("async leaf and composed actions pass action validation")
+{
+    using leaf_io = decltype(fnfelt::monad::io::create_async(async_double, 21));
+    using composed_io =
+        decltype(fnfelt::monad::io::create_async(async_double, 21)
+                     .and_then([](int x)
+                               { return fnfelt::monad::io::create([x] { return x + 1; }); }));
+
+    static_assert(CreateIOTraits<>::validate_action(^^leaf_io::action_type).empty());
+    static_assert(CreateIOTraits<>::validate_action(^^composed_io::action_type).empty());
+    static_assert(std::is_same_v<leaf_io::value_type, int>);
+    static_assert(std::is_same_v<composed_io::value_type, int>);
 }
 
 TEST_CASE("CreateAsyncIOTraits::validate_create_async reports the first blocking constraint")

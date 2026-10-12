@@ -28,6 +28,19 @@ fnfelt_test_compile_fail(
   ERROR_REGEX
   ${_expected_error_regex})
 
+# The source is an async leaf, so the diagnostic must splice the proxy's unwrapped value type
+# without blowing up. Pin through the reason and leave the continuation's type spelling free.
+set(_expected_error_regex
+    [[fnfelt: IO and_then error: IO\{\(AsyncSource\(\)\) => <unknown>\}: continuation function ]]
+    [[must return an IO: ]])
+
+fnfelt_test_compile_fail(
+  ${_prefix}.continuation_not_io_async
+  SOURCE
+  and_then_continuation_not_io_async.cpp
+  ERROR_REGEX
+  ${_expected_error_regex})
+
 # The source value is std::optional<int>: all-type template arguments, but not tuple-like, so it is
 # no longer spread. Pin through the friendly reason and leave the type's spelling free.
 set(_expected_error_regex
