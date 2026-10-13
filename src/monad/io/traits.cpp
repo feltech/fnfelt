@@ -14,6 +14,7 @@
 
 #include <fnfelt/monad/io/IO.hpp>
 #include <fnfelt/monad/io/detail/create.hpp>
+#include <fnfelt/monad/io/detail/just.hpp>
 
 // Magic numbers are used in tests.
 // Unnamed parameters are used in test stubs.
@@ -668,6 +669,34 @@ TEST_CASE("CreateIOTraits::validate_async_proxy checks the executable proxy shap
     static_assert(
         CreateIOTraits::validate_async_proxy(^^NonMovableValueProxy) ==
         "provided action's async proxy value must be movable");
+}
+
+TEST_CASE("JustIOTraits::validate_just checks the lifted value")
+{
+    using fnfelt::monad::io::IO;
+    using JustIOTraits = fnfelt::monad::io::detail::JustIOTraits<>;
+
+    // Complete, non-reference, non-IO, copy-constructible values are accepted.
+    static_assert(JustIOTraits::validate_just(^^int).empty());
+    static_assert(JustIOTraits::validate_just(^^CopyableValue).empty());
+    static_assert(JustIOTraits::validate_just(^^std::string).empty());
+    // A move-only value cannot be copied out on lvalue runs.
+    static_assert(
+        JustIOTraits::validate_just(^^std::unique_ptr<int>) ==
+        "provided value must be copy constructible");
+    // A reference input is rejected before the copy-constructibility check.
+    static_assert(
+        JustIOTraits::validate_just(^^int &) == "provided value must not be a reference type");
+    // An incomplete type cannot be stored by value.
+    static_assert(
+        JustIOTraits::validate_just(^^Incomplete) == "provided value is not a complete type");
+    // An IO is not a valid lifted value.
+    static_assert(
+        JustIOTraits::validate_just(^^IO<int (*)()>) == "provided value should not be an IO");
+    // An alias to a move-only value is resolved before the copy-constructibility check.
+    static_assert(
+        JustIOTraits::validate_just(^^UniquePtrAlias) ==
+        "provided value must be copy constructible");
 }
 
 // NOLINTEND(*-magic-numbers)
