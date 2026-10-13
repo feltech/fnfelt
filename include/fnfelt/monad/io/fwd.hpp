@@ -30,6 +30,10 @@ inline constexpr char default_io_name[] = "IO";
 template <char const * name_cstr = detail::default_io_name>
 struct CreateIOTraits;
 
+/// Traits validating a value lifted by `io::just`.
+template <char const * name_cstr = detail::default_io_name>
+struct JustIOTraits;
+
 template <class TAction, class TTraits = CreateIOTraits<>>
 class IO;
 

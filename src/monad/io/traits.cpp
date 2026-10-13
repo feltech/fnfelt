@@ -13,6 +13,7 @@
 
 #include <fnfelt/monad/io/IO.hpp>
 #include <fnfelt/monad/io/detail/create.hpp>
+#include <fnfelt/monad/io/detail/just.hpp>
 
 // Magic numbers are used in tests.
 // Unnamed parameters are used in test stubs.
@@ -26,6 +27,11 @@ struct CallableStruct
     {
         return 7;
     }
+};
+
+/// Plain copyable named struct lifted as a value - passes just validation.
+struct CopyableValue
+{
 };
 
 /// Callable struct action returning void - must fail validation.
@@ -86,6 +92,9 @@ constexpr auto inner_io_action = []
 
 inline constexpr char custom_io_name[] = "CustomIO";
 using CustomIOTraits = fnfelt::monad::io::CreateIOTraits<custom_io_name>;
+
+/// Alias to a move-only value - dealias must resolve it before validation.
+using UniquePtrAlias = std::unique_ptr<int>;
 }  // namespace
 
 TEST_CASE("CreateIOTraits exposes its name")
@@ -201,6 +210,34 @@ TEST_CASE("CreateIOTraits::is_io delegates to the detail::is_io free helper")
     static_assert(fnfelt::monad::io::detail::is_io(^^IO<int (*)()>));
     static_assert(!CreateIOTraits::is_io(^^int));
     static_assert(!fnfelt::monad::io::detail::is_io(^^int));
+}
+
+TEST_CASE("JustIOTraits::validate_just checks the lifted value")
+{
+    using fnfelt::monad::io::IO;
+    using JustIOTraits = fnfelt::monad::io::JustIOTraits<>;
+
+    // Complete, non-reference, non-IO, copy-constructible values are accepted.
+    static_assert(JustIOTraits::validate_just(^^int).empty());
+    static_assert(JustIOTraits::validate_just(^^CopyableValue).empty());
+    static_assert(JustIOTraits::validate_just(^^std::string).empty());
+    // A move-only value cannot be copied out on lvalue runs.
+    static_assert(
+        JustIOTraits::validate_just(^^std::unique_ptr<int>) ==
+        "provided value must be copy constructible");
+    // A reference input is rejected before the copy-constructibility check.
+    static_assert(
+        JustIOTraits::validate_just(^^int &) == "provided value must not be a reference type");
+    // An incomplete type cannot be stored by value.
+    static_assert(
+        JustIOTraits::validate_just(^^Incomplete) == "provided value is not a complete type");
+    // An IO is not a valid lifted value.
+    static_assert(
+        JustIOTraits::validate_just(^^IO<int (*)()>) == "provided value should not be an IO");
+    // An alias to a move-only value is resolved before the copy-constructibility check.
+    static_assert(
+        JustIOTraits::validate_just(^^UniquePtrAlias) ==
+        "provided value must be copy constructible");
 }
 
 // NOLINTEND(*-magic-numbers)
