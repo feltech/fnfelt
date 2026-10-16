@@ -25,7 +25,8 @@ target_sources(
          ${PROJECT_SOURCE_DIR}/include/fnfelt/static_string.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/macros_push.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/macros_pop.hpp
-         ${PROJECT_SOURCE_DIR}/include/fnfelt/detail/type_names.hpp)
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/detail/type_names.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/detail/invocability.hpp)
 
 set(_package_config_dir ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME})
 
@@ -69,6 +70,7 @@ target_compile_options(${_lib_target} INTERFACE "$<$<CXX_COMPILER_ID:GNU,Clang>:
 if(${PROJECT_NAME}_ENABLE_DEV)
   add_executable(
     ${PROJECT_NAME}.main
+    detail/invocability.cpp
     detail/type_names.cpp
     main.cpp)
   set(_main_target ${PROJECT_NAME}.main)
