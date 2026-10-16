@@ -14,6 +14,8 @@
 
 #include <string>
 #include <string_view>
+#include <tuple>
+#include <utility>
 
 #include <fnfelt/monad/io/fwd.hpp>
 
@@ -74,6 +76,56 @@ consteval std::meta::info action_value_meta(std::meta::info action_meta)
         return invoke_result(action_meta, {});
     }
     return ^^void;
+}
+
+/**
+ * Check whether a callable is directly invocable with a value when the callable is invoked as an
+ * rvalue.
+ *
+ * The stored callable is moved out and invoked as an rvalue on the public execution path, so this
+ * models the receiver's value category (bare-type prvalue semantics) rather than a const lvalue.
+ *
+ * @param receiver_meta Reflection of the callable type.
+ * @param value_meta Reflection of the value type.
+ * @return True if the function accepts the value as a single argument.
+ */
+consteval bool is_directly_invocable(std::meta::info receiver_meta, std::meta::info value_meta)
+{
+    return is_invocable_type(receiver_meta, {value_meta});
+}
+
+/**
+ * Check whether a callable is invocable with a spread value (std::apply) when the callable is
+ * invoked as an rvalue.
+ *
+ * The stored callable is moved out and invoked as an rvalue on the public execution path, so this
+ * models the receiver's value category (bare-type prvalue semantics) rather than a const lvalue.
+ *
+ * Only `std::pair` and `std::tuple` specialisations are spread. `std::apply` is the run-time
+ * mechanism, so eligibility must match what it can actually unpack; these are also the tuple-like
+ * types whose elements the reflection models. Other tuple-like types (e.g. `std::array`) are not
+ * supported yet.
+ *
+ * @param receiver_meta Reflection of the callable type.
+ * @param value_meta Reflection of the value type produced by the source IO.
+ * @return True if the continuation accepts the value's template arguments as its parameter pack.
+ */
+consteval bool is_spread_invocable(std::meta::info receiver_meta, std::meta::info value_meta)
+{
+    // Alias reflections report `has_template_arguments` false, so dealias first.
+    value_meta = dealias(value_meta);
+    if (!has_template_arguments(value_meta))
+    {
+        return false;
+    }
+    // `template_of` comparison is the same idiom as `is_io`; restrict spreading to the pair/tuple
+    // protocol that `std::apply` actually unpacks.
+    std::meta::info const value_template = template_of(value_meta);
+    if (value_template != ^^std::pair && value_template != ^^std::tuple)
+    {
+        return false;
+    }
+    return is_invocable_type(receiver_meta, template_arguments_of(value_meta));
 }
 }  // namespace detail
 }  // namespace fnfelt::monad::io
