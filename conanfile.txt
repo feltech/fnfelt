@@ -3,6 +3,7 @@
 # Copyright 2026 David Feltell
 
 [requires]
+immer/0.9.1
 libfork/3.8.0
 
 [test_requires]

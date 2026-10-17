@@ -52,6 +52,7 @@ endif()
 ####################################################################################################
 # Main project
 
+find_package(immer REQUIRED)
 find_package(libfork REQUIRED)
 
 add_subdirectory(src)
