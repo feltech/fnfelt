@@ -4,10 +4,10 @@ C++ monadic programming framework without type erasure.
 
 ## Usage
 
-`fnfelt` is a monadic IO framework: `create` wraps a side-effecting action, `and_then` sequences
-IOs, `transform` maps a value and `ap` applies one IO's callable to another's value. Compositions
-are validated at compile time through C++26 reflection, with readable diagnostics and no type
-erasure.
+`fnfelt` is a monadic IO framework: `create` wraps a side-effecting action, `and_then` chains an IO
+into a continuation, `transform` maps a value, `ap` applies one IO's callable to another's value and
+`sequence` collects a tuple of IOs into an IO of their values. Compositions are validated at compile
+time through C++26 reflection, with readable diagnostics and no type erasure.
 
 ```c++
 #include <fnfelt/monad/io.hpp>
@@ -29,9 +29,10 @@ pipelines remain constant-evaluable.
 `create_async` wraps a stateless callable returning `lf::task<T>` into an async leaf; the callable
 takes a libfork context (`auto`) first, before the bound arguments, e.g.
 `[](auto, int x) -> lf::task<int> { co_return x; }`. Synchronous and asynchronous IOs compose freely
-in `and_then` and `ap` chains, running as one tree under a single top-level scheduler. On the async
-path `ap` runs its two sub-IOs concurrently. `sync_wait()` optionally accepts a libfork scheduler
-(e.g. `lf::lazy_pool`) to service the tree, defaulting to a freshly constructed one.
+in `and_then`, `ap` and `sequence` chains, running as one tree under a single top-level scheduler.
+On the async path `ap` runs its two sub-IOs concurrently, and `sequence` overlaps all of its
+elements. `sync_wait()` optionally accepts a libfork scheduler (e.g. `lf::lazy_pool`) to service the
+tree, defaulting to a freshly constructed one.
 
 ## Building
 

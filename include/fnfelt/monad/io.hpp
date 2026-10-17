@@ -16,4 +16,5 @@
 #include <fnfelt/monad/io/detail.hpp>     // IWYU pragma: export
 #include <fnfelt/monad/io/fwd.hpp>        // IWYU pragma: export
 #include <fnfelt/monad/io/just.hpp>       // IWYU pragma: export
+#include <fnfelt/monad/io/sequence.hpp>   // IWYU pragma: export
 #include <fnfelt/monad/io/transform.hpp>  // IWYU pragma: export
