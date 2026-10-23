@@ -17,6 +17,7 @@
 #include <fnfelt/monad/io/detail/ap.hpp>
 #include <fnfelt/monad/io/detail/create.hpp>
 #include <fnfelt/monad/io/detail/just.hpp>
+#include <fnfelt/monad/io/detail/repeat_until.hpp>
 #include <fnfelt/monad/io/detail/transform.hpp>
 
 // Magic numbers are used in tests.
@@ -915,6 +916,171 @@ TEST_CASE("TransformIOTraits::validate_transform rejects invalid transformer res
         TransformIOTraits::validate_transform(
             ^^IO<std::pair<int, int> (*)()>, ^^SpreadTransformerReturnsIO) ==
         "transformer function should not return an IO");
+}
+
+TEST_CASE("RepeatUntilIOTraits::validate_repeat_until accepts valid combinations")
+{
+    using fnfelt::monad::io::IO;
+    using RepeatUntilIOTraits = fnfelt::monad::io::detail::RepeatUntilIOTraits<>;
+
+    // Stepper returning the same expected shape as the run-time loop uses.
+    static_assert(
+        RepeatUntilIOTraits::validate_repeat_until(^^IO<int (*)()>, ^^int, ^^RepeatStepper)
+            .empty());
+    // Captureless lambda stepper.
+    static_assert(
+        RepeatUntilIOTraits::validate_repeat_until(
+            ^^IO<int (*)()>, ^^int, ^^decltype([](int, int) { return std::expected<int, int>{}; }))
+            .empty());
+    // Function-pointer stepper.
+    static_assert(
+        RepeatUntilIOTraits::validate_repeat_until(^^IO<int (*)()>, ^^int, ^^RepeatStepperPointer)
+            .empty());
+    // A value-type change is fine: the expected value need not be the source's value type.
+    static_assert(RepeatUntilIOTraits::validate_repeat_until(
+                      ^^IO<int (*)()>,
+                      ^^int,
+                      ^^decltype([](int, int) { return std::expected<std::string, int>{}; }))
+                      .empty());
+    // Source IO with custom traits is still accepted.
+    static_assert(RepeatUntilIOTraits::validate_repeat_until(
+                      ^^IO<int (*)(), CustomIOTraits>, ^^int, ^^RepeatStepper)
+                      .empty());
+}
+
+TEST_CASE("RepeatUntilIOTraits::validate_repeat_until rejects sources with the exact reason")
+{
+    using fnfelt::monad::io::IO;
+    using RepeatUntilIOTraits = fnfelt::monad::io::detail::RepeatUntilIOTraits<>;
+
+    static_assert(
+        RepeatUntilIOTraits::validate_repeat_until(^^int, ^^int, ^^RepeatStepper) ==
+        "source IO is not an IO");
+    static_assert(
+        RepeatUntilIOTraits::validate_repeat_until(^^IO<void (*)()>, ^^int, ^^RepeatStepper) ==
+        "source IO produces no value");
+    // An IO producing an incomplete value: the stepper's later invocability queries are hard,
+    // non-catchable gcc errors for incomplete argument types, so the completeness reason guards
+    // them. A plain action with an incomplete return type is not even invocable on gcc 16.2 (its
+    // reflected value degrades to the `void` diagnostic placeholder, reporting "source IO produces
+    // no value" instead), so an IO over an async proxy exposing a `value_type` alias for the
+    // incomplete type is the closest nameable equivalent.
+    static_assert(
+        RepeatUntilIOTraits::validate_repeat_until(
+            ^^IO<IncompleteValueAction>, ^^int, ^^RepeatStepper) ==
+        "source IO's value is not a complete type");
+    static_assert(
+        RepeatUntilIOTraits::validate_repeat_until(
+            ^^IO<RepeatMoveOnlyAction>, ^^int, ^^RepeatStepper) ==
+        "source IO's action must be copy constructible");
+}
+
+TEST_CASE("RepeatUntilIOTraits::validate_repeat_until rejects states with the exact reason")
+{
+    using fnfelt::monad::io::IO;
+    using RepeatUntilIOTraits = fnfelt::monad::io::detail::RepeatUntilIOTraits<>;
+
+    // Incomplete state.
+    static_assert(
+        RepeatUntilIOTraits::validate_repeat_until(
+            ^^IO<int (*)()>, ^^Incomplete, ^^RepeatStepper) == "state is not a complete type");
+    // State that is neither move constructible nor move assignable.
+    static_assert(
+        RepeatUntilIOTraits::validate_repeat_until(
+            ^^IO<int (*)()>, ^^RepeatNonMovableState, ^^RepeatStepper) == "state must be movable");
+    // State that is move constructible but not move assignable.
+    static_assert(
+        RepeatUntilIOTraits::validate_repeat_until(
+            ^^IO<int (*)()>, ^^RepeatNoAssignState, ^^RepeatStepper) == "state must be movable");
+}
+
+TEST_CASE("RepeatUntilIOTraits::validate_repeat_until rejects steppers with the exact reason")
+{
+    using fnfelt::monad::io::IO;
+    using RepeatUntilIOTraits = fnfelt::monad::io::detail::RepeatUntilIOTraits<>;
+
+    // Incomplete stepper.
+    static_assert(
+        RepeatUntilIOTraits::validate_repeat_until(^^IO<int (*)()>, ^^int, ^^Incomplete) ==
+        "stepper function is not a complete type");
+    // Reference stepper.
+    static_assert(
+        RepeatUntilIOTraits::validate_repeat_until(
+            ^^IO<int (*)()>,
+            ^^int,
+            ^^decltype([](int, int) { return std::expected<int, int>{}; }) &) ==
+        "stepper function must not be a reference type");
+    // Non-class, non-function-pointer stepper.
+    static_assert(
+        RepeatUntilIOTraits::validate_repeat_until(^^IO<int (*)()>, ^^int, ^^int) ==
+        "stepper function is not a class or function pointer type");
+    // Non-move-constructible stepper.
+    static_assert(
+        RepeatUntilIOTraits::validate_repeat_until(
+            ^^IO<int (*)()>, ^^int, ^^RepeatNonMovableStepper) ==
+        "stepper function must be move constructible");
+    // Does not accept the state and value (wrong first-argument type).
+    static_assert(
+        RepeatUntilIOTraits::validate_repeat_until(
+            ^^IO<int (*)()>,
+            ^^int,
+            ^^decltype([](std::string, int) { return std::expected<int, int>{}; })) ==
+        "stepper function does not accept the state and value");
+    // Does not accept the state and value (wrong cardinality).
+    static_assert(
+        RepeatUntilIOTraits::validate_repeat_until(
+            ^^IO<int (*)()>, ^^int, ^^decltype([](int) { return std::expected<int, int>{}; })) ==
+        "stepper function does not accept the state and value");
+    // An rvalue-only call operator is rejected: the stepper is invoked as an lvalue.
+    static_assert(
+        RepeatUntilIOTraits::validate_repeat_until(
+            ^^IO<int (*)()>, ^^int, ^^RepeatRvalueOnlyStepper) ==
+        "stepper function does not accept the state and value");
+    // Result is not an expected.
+    static_assert(
+        RepeatUntilIOTraits::validate_repeat_until(
+            ^^IO<int (*)()>, ^^int, ^^decltype([](int, int) { return 1; })) ==
+        "stepper function must return a std::expected");
+    // The unexpected type is not the state type.
+    static_assert(
+        RepeatUntilIOTraits::validate_repeat_until(
+            ^^IO<int (*)()>,
+            ^^int,
+            ^^decltype([](int, int) -> RepeatMismatchedUnexpected { return {}; })) ==
+        "stepper function's unexpected type is not the state type");
+}
+
+TEST_CASE("RepeatUntilIOTraits::validate_repeat_until rejects invalid expected values")
+{
+    using fnfelt::monad::io::IO;
+    using RepeatUntilIOTraits = fnfelt::monad::io::detail::RepeatUntilIOTraits<>;
+
+    // The void specialisation produces no value.
+    static_assert(
+        RepeatUntilIOTraits::validate_repeat_until(
+            ^^IO<int (*)()>,
+            ^^int,
+            ^^decltype([](int, int) -> std::expected<void, int> { return {}; })) ==
+        "stepper function must return an expected that produces a value");
+    // An IO value would nest an IO as the loop's result. The expected is constructed in its error
+    // state: the loop's value type need not be default constructible, so `{}` is not usable.
+    static_assert(
+        RepeatUntilIOTraits::validate_repeat_until(
+            ^^IO<int (*)()>,
+            ^^int,
+            ^^decltype([](int, int) -> std::expected<IO<int (*)()>, int>
+            {
+                return std::expected<IO<int (*)()>, int>{std::unexpected{0}};
+            })) == "stepper function's expected value should not be an IO");
+    // A non-movable value is representable inside a std::expected and must be rejected.
+    static_assert(
+        RepeatUntilIOTraits::validate_repeat_until(
+            ^^IO<int (*)()>,
+            ^^int,
+            ^^decltype([](int, int) -> std::expected<NonMovable, int> { return std::unexpected{0}; })) ==
+        "stepper function's expected value must be movable");
+    // Reference and incomplete values cannot be written inside a std::expected at all (the class
+    // template rejects them), so those checks are unreachable defences.
 }
 
 TEST_CASE("ApIOTraits::validate_ap accepts compatible function and value IOs")
