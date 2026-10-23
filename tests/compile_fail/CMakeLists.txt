@@ -19,7 +19,8 @@ target_precompile_headers(
   <fnfelt/monad/io/create.hpp>
   <fnfelt/monad/io/just.hpp>
   <fnfelt/monad/io/sequence.hpp>
-  <fnfelt/monad/io/transform.hpp>)
+  <fnfelt/monad/io/transform.hpp>
+  <fnfelt/monad/io/traverse.hpp>)
 
 # fnfelt_compile_fail(<name> SOURCE <file.cpp> ERROR_REGEX <regex>)
 #
