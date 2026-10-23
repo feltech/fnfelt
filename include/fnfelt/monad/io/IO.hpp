@@ -206,6 +206,67 @@ public:
         return io::select<name_cstr>(FW(self), FW(fallback));
     }
 
+    /**
+     * Repeat this IO in a loop until a stepper reports success, producing an IO of the final value.
+     *
+     * The returned IO, when run, loops: this IO is re-run on EVERY iteration (its action is copied
+     * out of the stored source, so this IO's action must be copy constructible), the stepper is
+     * invoked with the current state and the freshly produced value as exactly two arguments, and
+     * the state is threaded only through the stepper's `std::expected` result: an `std::unexpected`
+     * value becomes the next iteration's state, and the first `std::expected` value becomes the
+     * loop's result.
+     *
+     * The stepper is taken by value and moved into the free `repeat_until` as an rvalue: lvalues
+     * are copied into the parameter, and the caller's lvalue is left untouched. It must be a
+     * complete, non-reference, move constructible class or function pointer type, callable as an
+     * lvalue receiver with the state and value (exactly two arguments, no spreading), and must
+     * return `std::expected<NewValue, State>` where the unexpected type is exactly the state type.
+     * The state must be a complete, movable type. It is validated by the traits template argument's
+     * `validate_repeat_until` (default `detail::RepeatUntilIOTraits<>`). The result IO also takes
+     * those traits; this IO's own traits are not inherited. An invalid stepper is rejected by a
+     * friendly static_assert and yields `detail::RepeatUntilError`.
+     *
+     * @tparam TRepeatUntilTraits Traits used to validate this IO and the state and stepper
+     * combination, and for the result IO, defaulting to detail::RepeatUntilIOTraits.
+     * @param self The IO instance to repeat (explicit object parameter).
+     * @param initial_state Initial state threaded into the stepper.
+     * @param stepper Stepper taking the state and value, returning an expected.
+     * @return IO re-running this IO until the stepper reports success, or detail::RepeatUntilError
+     * if the combination is invalid (which is also rejected by a friendly static_assert).
+     */
+    template <
+        class TRepeatUntilTraits = detail::RepeatUntilIOTraits<>,
+        class TInitialState,
+        class TStepper>
+    [[nodiscard]] constexpr auto repeat_until(
+        this auto && self, TInitialState initial_state, TStepper stepper)
+    {
+        return io::repeat_until<TRepeatUntilTraits>(FW(self), FW(initial_state), FW(stepper));
+    }
+
+    /**
+     * Repeat this IO in a loop until a stepper reports success, naming the result.
+     *
+     * This overload allows the returned IO type to be named, for use in diagnostics.
+     *
+     * See the defaulted-traits member overload for the full contract, which is identical: the
+     * result IO takes `detail::RepeatUntilIOTraits<name_cstr>`, which is also used to validate this
+     * IO and the state and stepper combination.
+     *
+     * @param self The IO instance to repeat (explicit object parameter).
+     * @param initial_state Initial state threaded into the stepper.
+     * @param stepper Stepper taking the state and value, returning an expected.
+     * @return IO re-running this IO until the stepper reports success with
+     * detail::RepeatUntilIOTraits<name_cstr>, or detail::RepeatUntilError if the combination is
+     * invalid (which is also rejected by a friendly static_assert).
+     */
+    template <char const * name_cstr, class TInitialState, class TStepper>
+    [[nodiscard]] constexpr auto repeat_until(
+        this auto && self, TInitialState initial_state, TStepper stepper)
+    {
+        return io::repeat_until<name_cstr>(FW(self), FW(initial_state), FW(stepper));
+    }
+
 private:
     action_type action_;
 };

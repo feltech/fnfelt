@@ -36,11 +36,13 @@ target_sources(
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/create.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/fwd.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/just.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/repeat_until.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/sequence.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/transform.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/select.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/traverse.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/just.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/repeat_until.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/transform.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/select.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/and_then.hpp
@@ -101,6 +103,7 @@ if(${PROJECT_NAME}_ENABLE_DEV)
     monad/io/traits.cpp
     monad/io/just.cpp
     monad/io/and_then.cpp
+    monad/io/repeat_until.cpp
     monad/io/transform.cpp
     monad/io/select.cpp
     monad/io/create.cpp
