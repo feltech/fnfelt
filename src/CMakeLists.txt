@@ -39,6 +39,7 @@ target_sources(
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/sequence.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/transform.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/select.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/traverse.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/just.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/transform.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/select.hpp
@@ -47,6 +48,7 @@ target_sources(
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/async.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/create.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/sequence.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/traverse.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/IO.hpp)
 
 set(_package_config_dir ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME})
@@ -104,6 +106,7 @@ if(${PROJECT_NAME}_ENABLE_DEV)
     monad/io/create.cpp
     monad/io/ap.cpp
     monad/io/sequence.cpp
+    monad/io/traverse.cpp
     monad/io/async.cpp
     monad/io/IO.cpp)
   set(_main_target ${PROJECT_NAME}.main)
