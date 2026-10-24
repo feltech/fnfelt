@@ -34,6 +34,8 @@ template <char const * name_cstr = default_state_io_name>
 struct ApStateIOTraits;
 template <char const * name_cstr = default_state_io_name>
 struct SequenceStateIOTraits;
+template <char const * name_cstr = default_state_io_name>
+struct TraverseStateIOTraits;
 }  // namespace detail
 
 template <class TState, class TAction, class TTraits = detail::CreateStateIOTraits<>>
