@@ -64,6 +64,8 @@ struct ApReaderIOTraits;
 template <char const * name_cstr = detail::default_reader_io_name>
 struct CreateAsyncReaderIOTraits;
 
+template <char const * name_cstr = detail::default_reader_io_name>
+struct TraverseReaderIOTraits;
 }  // namespace detail
 
 template <char const * name_cstr = detail::default_reader_io_name>
