@@ -15,6 +15,7 @@
 #include <utility>
 
 #include <fnfelt/monad/io.hpp>
+#include <fnfelt/monad/reader_io.hpp>
 #include <fnfelt/static_string.hpp>
 
 // Magic numbers are used in tests.
@@ -296,6 +297,14 @@ TEST_CASE("detail::just_error_msg composes a readable diagnostic")
             "JustIO", "rejected by custom just traits") ==
         "fnfelt: IO just error: JustIO{() => Value}: rejected by custom just traits: "
         "just_error_msg_test::Value");
+}
+
+TEST_CASE("named IO just can store a ReaderIO value with both umbrellas included")
+{
+    using namespace fnfelt::literals;  // NOLINT
+    auto source = fnfelt::monad::reader_io::just<int>(42);
+    auto plain_value = fnfelt::monad::io::just<"reader value"_ss>(source).build().sync_wait();
+    CHECK_EQ(plain_value.build(1).sync_wait(), 42);
 }
 
 // NOLINTEND(*-magic-numbers)
