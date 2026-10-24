@@ -4,3 +4,4 @@
 
 add_subdirectory(StateIO)
 add_subdirectory(create)
+add_subdirectory(lift)

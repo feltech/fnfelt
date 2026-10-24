@@ -20,6 +20,8 @@ namespace detail
 inline constexpr char default_state_io_name[] = "StateIO";
 template <char const * name_cstr = default_state_io_name>
 struct CreateStateIOTraits;
+template <char const * name_cstr = default_state_io_name>
+struct LiftStateIOTraits;
 }  // namespace detail
 
 template <class TState, class TAction, class TTraits = detail::CreateStateIOTraits<>>
