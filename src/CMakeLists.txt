@@ -64,6 +64,8 @@ target_sources(
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/detail.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/detail/create.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/detail/bind.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/detail/sequence.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/sequence.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/create.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/detail/and_then.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/and_then.hpp
@@ -146,6 +148,7 @@ if(${PROJECT_NAME}_ENABLE_DEV)
     monad/reader_io/ReaderIO.cpp
     monad/reader_io/detail.cpp
     monad/reader_io/detail/bind.cpp
+    monad/reader_io/sequence.cpp
     monad/reader_io/traits.cpp
     monad/reader_io/create.cpp
     monad/reader_io/and_then.cpp
