@@ -111,6 +111,8 @@ target_sources(
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/tap.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/store.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/fanout.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/split.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/detail/split.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/detail/fanout.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/detail/store.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/detail/tap.hpp
@@ -227,7 +229,8 @@ if(${PROJECT_NAME}_ENABLE_DEV)
     monad/state_io/get_state.cpp
     monad/state_io/tap.cpp
     monad/state_io/store.cpp
-    monad/state_io/fanout.cpp)
+    monad/state_io/fanout.cpp
+    monad/state_io/split.cpp)
   set(_main_target ${PROJECT_NAME}.main)
   target_link_libraries(${_main_target} PRIVATE doctest::doctest ${PROJECT_NAME}.lib)
   fnfelt_target_linters(${_main_target})

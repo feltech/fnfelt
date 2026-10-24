@@ -48,6 +48,8 @@ template <char const * name_cstr = default_state_io_name>
 struct StoreStateIOTraits;
 template <char const * name_cstr = default_state_io_name>
 struct FanoutStateIOTraits;
+template <char const * name_cstr = default_state_io_name>
+struct SplitStateIOTraits;
 }  // namespace detail
 
 template <class TState, class TAction, class TTraits = detail::CreateStateIOTraits<>>

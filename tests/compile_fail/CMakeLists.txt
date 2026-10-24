@@ -25,6 +25,7 @@ target_precompile_headers(
   <fnfelt/monad/state_io/lift.hpp>
   <fnfelt/monad/state_io/repeat_until.hpp>
   <fnfelt/monad/state_io/sequence.hpp>
+  <fnfelt/monad/state_io/split.hpp>
   <fnfelt/monad/state_io/store.hpp>
   <fnfelt/monad/state_io/tap.hpp>
   <fnfelt/monad/state_io/transform.hpp>
