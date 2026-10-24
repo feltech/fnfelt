@@ -40,6 +40,8 @@ template <char const * name_cstr = default_state_io_name>
 struct CreateAsyncStateIOTraits;
 template <char const * name_cstr = default_state_io_name>
 struct RepeatUntilStateIOTraits;
+template <char const * name_cstr = default_state_io_name>
+struct GetStateStateIOTraits;
 }  // namespace detail
 
 template <class TState, class TAction, class TTraits = detail::CreateStateIOTraits<>>

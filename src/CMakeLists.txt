@@ -107,6 +107,8 @@ target_sources(
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/sequence.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/traverse.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/repeat_until.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/get_state.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/detail/get_state.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/detail/repeat_until.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/detail/traverse.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/detail/sequence.hpp
@@ -215,7 +217,8 @@ if(${PROJECT_NAME}_ENABLE_DEV)
     monad/state_io/sequence.cpp
     monad/state_io/traverse.cpp
     monad/state_io/async.cpp
-    monad/state_io/repeat_until.cpp)
+    monad/state_io/repeat_until.cpp
+    monad/state_io/get_state.cpp)
   set(_main_target ${PROJECT_NAME}.main)
   target_link_libraries(${_main_target} PRIVATE doctest::doctest ${PROJECT_NAME}.lib)
   fnfelt_target_linters(${_main_target})
