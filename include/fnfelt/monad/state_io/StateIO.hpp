@@ -168,6 +168,39 @@ public:
         return state_io::select<name_cstr>(FW(self), FW(fallback));
     }
 
+    /**
+     * Repeat with an independent accumulator while threading updated state.
+     *
+     * @param self Reusable source computation.
+     * @param initial Initial accumulator.
+     * @param stepper Transition returning expected<value, accumulator>.
+     * @return Loop StateIO.
+     */
+    template <
+        class TRepeatTraits = detail::RepeatUntilStateIOTraits<>,
+        class TInitial,
+        class TStepper>
+    [[nodiscard]] constexpr auto repeat_until(
+        this auto && self, TInitial && initial, TStepper && stepper)
+    {
+        return state_io::repeat_until<TRepeatTraits>(FW(self), FW(initial), FW(stepper));
+    }
+
+    /**
+     * Repeat and name the result.
+     *
+     * @param self Reusable source computation.
+     * @param initial Initial accumulator.
+     * @param stepper Expected-producing transition.
+     * @return Named loop StateIO.
+     */
+    template <char const * name_cstr, class TInitial, class TStepper>
+    [[nodiscard]] constexpr auto repeat_until(
+        this auto && self, TInitial && initial, TStepper && stepper)
+    {
+        return state_io::repeat_until<name_cstr>(FW(self), FW(initial), FW(stepper));
+    }
+
 private:
     action_type action_;
 };
