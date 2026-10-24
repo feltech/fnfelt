@@ -46,16 +46,16 @@ struct LiftReaderIOTraits;
 template <char const * name_cstr = detail::default_reader_io_name>
 struct AndThenReaderIOTraits;
 
+/// Traits validating the source ReaderIO and transformer function provided to
+/// `reader_io::transform`.
+template <char const * name_cstr = detail::default_reader_io_name>
+struct TransformReaderIOTraits;
+
 /// Traits validating the state-first coroutine function and arguments provided to
 /// `reader_io::create_async`.
 template <char const * name_cstr = detail::default_reader_io_name>
 struct CreateAsyncReaderIOTraits;
 }  // namespace detail
-
-/// Traits validating the source ReaderIO and transformer function provided to
-/// `reader_io::transform`.
-template <char const * name_cstr = detail::default_reader_io_name>
-struct TransformReaderIOTraits;
 
 /// Traits validating the function and value ReaderIOs provided to `reader_io::ap`.
 template <char const * name_cstr = detail::default_reader_io_name>
@@ -84,6 +84,16 @@ template <class TTraits = detail::AndThenReaderIOTraits<>, class TSource, class 
 template <char const * name_cstr, class TSource, class TContinuation>
 [[nodiscard]] constexpr auto and_then(TSource && source, TContinuation && continuation);
 
+// Forward declarations for the free transform functions; defined and documented in transform.hpp.
+// The source ReaderIO is taken by forwarding reference so rvalue chains move and lvalues are
+// copied, and the transformer is forwarded as an rvalue into the composition.
+template <class TTraits = detail::TransformReaderIOTraits<>, class TSource, class TTransformer>
+[[nodiscard]] constexpr auto transform(TSource && source, TTransformer && transformer);
+
+template <char const * name_cstr, class TSource, class TTransformer>
+// cpplint mistakes this for std::transform; no <algorithm> is used here.
+// NOLINTNEXTLINE(build/include_what_you_use)
+[[nodiscard]] constexpr auto transform(TSource && source, TTransformer && transformer);
 /// @endcond
 
 }  // namespace fnfelt::monad::reader_io
