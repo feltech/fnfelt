@@ -70,6 +70,8 @@ target_sources(
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/detail/select.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/transform.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/select.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/detail/ap.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/ap.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/detail/async.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/async.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/detail/just.hpp
@@ -147,6 +149,7 @@ if(${PROJECT_NAME}_ENABLE_DEV)
     monad/reader_io/and_then.cpp
     monad/reader_io/transform.cpp
     monad/reader_io/select.cpp
+    monad/reader_io/ap.cpp
     monad/reader_io/async.cpp
     monad/reader_io/lift.cpp
     monad/reader_io/just.cpp)

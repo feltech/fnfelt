@@ -16,8 +16,12 @@
 #include <libfork/schedule/lazy_pool.hpp>
 
 #include <fnfelt/monad/io/just.hpp>
+#include <fnfelt/monad/reader_io/and_then.hpp>
+#include <fnfelt/monad/reader_io/ap.hpp>
 #include <fnfelt/monad/reader_io/create.hpp>
 #include <fnfelt/monad/reader_io/detail/async.hpp>
+#include <fnfelt/monad/reader_io/just.hpp>
+#include <fnfelt/monad/reader_io/transform.hpp>
 #include <fnfelt/static_string.hpp>
 
 // Magic numbers are used in tests.
@@ -98,6 +102,27 @@ TEST_CASE("create_async takes a name and explicit traits")
     CHECK_EQ(custom.build(State{2}).sync_wait(lf::lazy_pool{2}), 7);
 }
 
+TEST_CASE("create_async composes with the reader operations")
+{
+    auto async_reader = fnfelt::monad::reader_io::create_async<State>(echo_add, 20);
+
+    // transform: the async leaf's value (state + 20) is mapped.
+    auto transformed = async_reader.transform([](int const & value) { return value * 2; });
+    CHECK_EQ(transformed.build(State{5}).sync_wait(lf::lazy_pool{2}), 50);
+
+    // and_then: the continuation receives the leaf's value and returns a same-state ReaderIO,
+    // whose own async leaf subtracts the state's value.
+    auto chained = async_reader.and_then(
+        [](int const & produced)
+        {
+            constexpr auto echo_sub =
+                [](auto /*self*/, State const & state, int produced_in) -> lf::task<int>
+            { co_return produced_in - state.value; };
+            return fnfelt::monad::reader_io::create_async<State>(echo_sub, produced);
+        });
+    CHECK_EQ(chained.build(State{5}).sync_wait(lf::lazy_pool{2}), 20);
+}
+
 TEST_CASE("create_async accepts the state as const& and by value in the coroutine signature")
 {
     auto const_ref_reader = fnfelt::monad::reader_io::create_async<State>(echo_state);
@@ -107,6 +132,38 @@ TEST_CASE("create_async accepts the state as const& and by value in the coroutin
     { co_return state.value; };
     auto by_value_reader = fnfelt::monad::reader_io::create_async<State>(echo_by_value);
     CHECK_EQ(by_value_reader.build(State{11}).sync_wait(lf::lazy_pool{2}), 11);
+}
+
+TEST_CASE("async compositions retain owned state referenced by coroutine parameters")
+{
+    constexpr auto length = [](auto, std::string const & state) -> lf::task<int>
+    { co_return static_cast<int>(state.size()); };
+    auto source = fnfelt::monad::reader_io::create_async<std::string>(length);
+    auto transformed = source.transform([](int size) { return size + 1; });
+    CHECK_EQ(transformed.build(std::string(200, 'x')).sync_wait(lf::lazy_pool{2}), 201);
+    auto chained = source.and_then(
+        [](int size)
+        {
+            constexpr auto add_length =
+                [](auto, std::string const & state, int first_size) -> lf::task<int>
+            { co_return first_size + static_cast<int>(state.size()); };
+            return fnfelt::monad::reader_io::create_async<std::string>(add_length, size);
+        });
+    CHECK_EQ(chained.build(std::string(200, 'x')).sync_wait(lf::lazy_pool{2}), 400);
+    auto applied = fnfelt::monad::reader_io::ap(
+        fnfelt::monad::reader_io::just<std::string>([](int size) { return size * 2; }), source);
+    CHECK_EQ(applied.build(std::string(200, 'x')).sync_wait(lf::lazy_pool{2}), 400);
+    constexpr auto length_adder = [](auto, std::string const & state) -> lf::task<int (*)(int)>
+    {
+        if (state.size() != 200)
+        {
+            throw std::runtime_error{"bound state was not retained"};
+        }
+        co_return + [](int size) { return size + 1; };
+    };
+    auto both_async = fnfelt::monad::reader_io::ap(
+        fnfelt::monad::reader_io::create_async<std::string>(length_adder), source);
+    CHECK_EQ(both_async.build(std::string(200, 'x')).sync_wait(lf::lazy_pool{2}), 201);
 }
 
 // NOLINTEND(*-magic-numbers)

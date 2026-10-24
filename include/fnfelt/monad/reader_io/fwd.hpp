@@ -55,15 +55,15 @@ struct TransformReaderIOTraits;
 template <char const * name_cstr = detail::default_reader_io_name>
 struct SelectReaderIOTraits;
 
+/// Traits validating the function and value ReaderIOs provided to `reader_io::ap`.
+template <char const * name_cstr = detail::default_reader_io_name>
+struct ApReaderIOTraits;
+
 /// Traits validating the state-first coroutine function and arguments provided to
 /// `reader_io::create_async`.
 template <char const * name_cstr = detail::default_reader_io_name>
 struct CreateAsyncReaderIOTraits;
 }  // namespace detail
-
-/// Traits validating the function and value ReaderIOs provided to `reader_io::ap`.
-template <char const * name_cstr = detail::default_reader_io_name>
-struct ApReaderIOTraits;
 
 /// Run proxy binding a ReaderIO's action to a state for a single materialisation; defined in
 /// async.hpp.

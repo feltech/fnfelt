@@ -15,6 +15,7 @@ target_precompile_headers(
   <fnfelt/monad/io.hpp>
   <fnfelt/monad/reader_io/ReaderIO.hpp>
   <fnfelt/monad/reader_io/and_then.hpp>
+  <fnfelt/monad/reader_io/ap.hpp>
   <fnfelt/monad/reader_io/async.hpp>
   <fnfelt/monad/reader_io/create.hpp>
   <fnfelt/monad/reader_io/just.hpp>

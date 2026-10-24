@@ -3,7 +3,7 @@
 // Copyright 2026 David Feltell
 // IWYU pragma: private, include "../../io.hpp"
 /**
- * @file detail/ap.hpp
+ * @file monad/io/detail/ap.hpp
  *
  * Implementation details for the IO monad's applicative application.
  */
