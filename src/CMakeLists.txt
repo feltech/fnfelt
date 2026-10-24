@@ -25,6 +25,7 @@ target_sources(
          ${PROJECT_SOURCE_DIR}/include/fnfelt/static_string.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/macros_push.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/macros_pop.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/detail/callable_shape.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/detail/type_names.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/detail/invocability.hpp)
 
@@ -70,6 +71,7 @@ target_compile_options(${_lib_target} INTERFACE "$<$<CXX_COMPILER_ID:GNU,Clang>:
 if(${PROJECT_NAME}_ENABLE_DEV)
   add_executable(
     ${PROJECT_NAME}.main
+    detail/callable_shape.cpp
     detail/invocability.cpp
     detail/type_names.cpp
     main.cpp)
