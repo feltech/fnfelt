@@ -66,6 +66,9 @@ struct CreateAsyncReaderIOTraits;
 
 template <char const * name_cstr = detail::default_reader_io_name>
 struct TraverseReaderIOTraits;
+
+template <char const * name_cstr = detail::default_reader_io_name>
+struct RepeatUntilReaderIOTraits;
 }  // namespace detail
 
 template <char const * name_cstr = detail::default_reader_io_name>
@@ -110,6 +113,17 @@ template <class TTraits = detail::SelectReaderIOTraits<>, class TChoice, class T
 template <char const * name_cstr, class TChoice, class TFallback>
 [[nodiscard]] constexpr auto select(TChoice && choice, TFallback && fallback);
 
+template <
+    class TTraits = detail::RepeatUntilReaderIOTraits<>,
+    class TSource,
+    class TInitial,
+    class TStepper>
+[[nodiscard]] constexpr auto repeat_until(
+    TSource && source, TInitial && initial, TStepper && stepper);
+
+template <char const * name_cstr, class TSource, class TInitial, class TStepper>
+[[nodiscard]] constexpr auto repeat_until(
+    TSource && source, TInitial && initial, TStepper && stepper);
 /// @endcond
 
 }  // namespace fnfelt::monad::reader_io
