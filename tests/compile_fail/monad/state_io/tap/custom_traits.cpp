@@ -1,0 +1,34 @@
+// fnfelt
+// SPDX-License-Identifier: MIT
+// Copyright 2026 David Feltell
+#include <meta>
+
+#include <expected>
+#include <string_view>
+#include <tuple>
+#include <utility>
+
+#include <fnfelt/monad/io/just.hpp>
+#include <fnfelt/monad/state_io/just.hpp>
+#include <fnfelt/monad/state_io/tap.hpp>
+
+namespace
+{
+struct Reject : fnfelt::monad::state_io::detail::TapStateIOTraits<>
+{
+    static constexpr std::string_view name = "CustomStateIO";
+    static consteval std::string_view validate_tap(std::meta::info, std::meta::info)
+    {
+        return "rejected by custom traits";
+    }
+};
+}  // namespace
+
+void rejected_operation()
+{
+    namespace state_io = fnfelt::monad::state_io;
+    namespace io = fnfelt::monad::io;
+    [[maybe_unused]] auto source = state_io::just<int>(1);
+    auto result = state_io::tap<Reject>(source, source);
+    (void)result;
+}
