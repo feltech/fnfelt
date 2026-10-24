@@ -60,6 +60,7 @@ target_sources(
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/traverse.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/IO.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/ReaderIO.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/fwd.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/detail.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/detail/create.hpp
@@ -163,6 +164,7 @@ if(${PROJECT_NAME}_ENABLE_DEV)
     monad/reader_io/sequence.cpp
     monad/reader_io/traverse.cpp
     monad/reader_io/repeat_until.cpp
+    monad/reader_io.cpp
     monad/reader_io/traits.cpp
     monad/reader_io/create.cpp
     monad/reader_io/and_then.cpp

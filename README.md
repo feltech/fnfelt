@@ -2,6 +2,63 @@
 
 C++ monadic programming framework without type erasure.
 
+Describe independent work, combine its results, then perform the next effect. This small report
+reads two files concurrently with `sequence`, shares configuration through `ReaderIO`, and lifts an
+`IO` action to print the summary:
+
+```cpp
+#include <filesystem>
+#include <format>
+#include <fstream>
+#include <print>
+#include <stdexcept>
+#include <string>
+
+#include <libfork/schedule/lazy_pool.hpp>
+
+#include <fnfelt/monad/io.hpp>
+#include <fnfelt/monad/reader_io.hpp>
+
+namespace io = fnfelt::monad::io;
+namespace reader = fnfelt::monad::reader_io;
+
+struct Config { std::filesystem::path root; };
+
+int main()
+{
+    auto lines = [](char const* name) {
+        return reader::create<Config>([name](Config const& config) {
+            return io::create([path = config.root / name] {
+                std::ifstream file(path);
+                if (!file) throw std::runtime_error{"Cannot open input"};
+                int count = 0;
+                for (std::string line; std::getline(file, line);) ++count;
+                return count;
+            });
+        });
+    };
+
+    auto report = reader::sequence<Config>(lines("README.md"), lines("LICENSE"))
+        .transform([](int readme, int license) {
+            return std::format("Docs: {} README lines + {} license lines = {} total",
+                               readme, license, readme + license);
+        })
+        .and_then([](std::string summary) {
+            return reader::lift<Config>(io::create([summary] {
+                std::println("{}", summary);
+                return 0;
+            }));
+        });
+
+    return report.build(Config{"."}).sync_wait(lf::lazy_pool{2});
+}
+```
+
+Run from the repository root. The pipeline stays lazy until `sync_wait`: `sequence` runs the two
+file-reading actions on a pool of two workers, `transform` combines their results, and `and_then`
+runs the dependent output action. Change the root passed to `build` to reuse the same report for
+another checkout.
+
 ## Building
 
 Build dependencies are managed via [Conan](https://conan.io/), which also creates CMake presets for

@@ -13,21 +13,7 @@ target_precompile_headers(
   PRIVATE
   <meta>
   <fnfelt/monad/io.hpp>
-  <fnfelt/monad/reader_io/ReaderIO.hpp>
-  <fnfelt/monad/reader_io/and_then.hpp>
-  <fnfelt/monad/reader_io/ap.hpp>
-  <fnfelt/monad/reader_io/async.hpp>
-  <fnfelt/monad/reader_io/create.hpp>
-  <fnfelt/monad/reader_io/fanout.hpp>
-  <fnfelt/monad/reader_io/get_state.hpp>
-  <fnfelt/monad/reader_io/just.hpp>
-  <fnfelt/monad/reader_io/lift.hpp>
-  <fnfelt/monad/reader_io/repeat_until.hpp>
-  <fnfelt/monad/reader_io/sequence.hpp>
-  <fnfelt/monad/reader_io/split.hpp>
-  <fnfelt/monad/reader_io/tap.hpp>
-  <fnfelt/monad/reader_io/transform.hpp>
-  <fnfelt/monad/reader_io/traverse.hpp>)
+  <fnfelt/monad/reader_io.hpp>)
 
 # fnfelt_compile_fail(<name> SOURCE <file.cpp> ERROR_REGEX <regex>)
 #
