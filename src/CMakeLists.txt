@@ -58,7 +58,11 @@ target_sources(
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/create.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/sequence.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/traverse.hpp
-         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/IO.hpp)
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/IO.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/ReaderIO.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/fwd.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/detail.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/detail/create.hpp)
 
 set(_package_config_dir ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME})
 
@@ -122,7 +126,10 @@ if(${PROJECT_NAME}_ENABLE_DEV)
     monad/io/traverse.cpp
     monad/io/async.cpp
     monad/io/IO.cpp
-    monad/io.cpp)
+    monad/io.cpp
+    monad/reader_io/ReaderIO.cpp
+    monad/reader_io/detail.cpp
+    monad/reader_io/traits.cpp)
   set(_main_target ${PROJECT_NAME}.main)
   target_link_libraries(${_main_target} PRIVATE doctest::doctest ${PROJECT_NAME}.lib)
   fnfelt_target_linters(${_main_target})

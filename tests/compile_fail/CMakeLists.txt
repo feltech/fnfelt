@@ -12,7 +12,8 @@ target_precompile_headers(
   ${_pch_target}
   PRIVATE
   <meta>
-  <fnfelt/monad/io.hpp>)
+  <fnfelt/monad/io.hpp>
+  <fnfelt/monad/reader_io/ReaderIO.hpp>)
 
 # fnfelt_compile_fail(<name> SOURCE <file.cpp> ERROR_REGEX <regex>)
 #
