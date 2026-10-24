@@ -41,16 +41,16 @@ struct JustReaderIOTraits;
 template <char const * name_cstr = detail::default_reader_io_name>
 struct LiftReaderIOTraits;
 
+/// Traits validating the source ReaderIO and continuation function provided to
+/// `reader_io::and_then`.
+template <char const * name_cstr = detail::default_reader_io_name>
+struct AndThenReaderIOTraits;
+
 /// Traits validating the state-first coroutine function and arguments provided to
 /// `reader_io::create_async`.
 template <char const * name_cstr = detail::default_reader_io_name>
 struct CreateAsyncReaderIOTraits;
 }  // namespace detail
-
-/// Traits validating the source ReaderIO and continuation function provided to
-/// `reader_io::and_then`.
-template <char const * name_cstr = detail::default_reader_io_name>
-struct AndThenReaderIOTraits;
 
 /// Traits validating the source ReaderIO and transformer function provided to
 /// `reader_io::transform`.
@@ -74,6 +74,15 @@ template <class TState, class TTraits = detail::CreateReaderIOTraits<>, class TA
 
 template <char const * name_cstr, class TState, class TAction>
 [[nodiscard]] constexpr auto create(TAction && action);
+
+// Forward declarations for the free and_then functions; defined and documented in and_then.hpp.
+// The source ReaderIO is taken by forwarding reference so rvalue chains move and lvalues are
+// copied, and the continuation is forwarded as an rvalue into the composition.
+template <class TTraits = detail::AndThenReaderIOTraits<>, class TSource, class TContinuation>
+[[nodiscard]] constexpr auto and_then(TSource && source, TContinuation && continuation);
+
+template <char const * name_cstr, class TSource, class TContinuation>
+[[nodiscard]] constexpr auto and_then(TSource && source, TContinuation && continuation);
 
 /// @endcond
 

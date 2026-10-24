@@ -3,7 +3,7 @@
 // Copyright 2026 David Feltell
 // IWYU pragma: private, include "../../io.hpp"
 /**
- * @file detail/and_then.hpp
+ * @file monad/io/detail/and_then.hpp
  *
  * Implementation details for the IO monad's bind operation.
  */

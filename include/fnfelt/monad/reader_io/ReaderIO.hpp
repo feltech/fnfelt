@@ -118,6 +118,53 @@ public:
         }
     }
 
+    /**
+     * Chain a continuation to this ReaderIO, producing a ReaderIO of the continuation's value over
+     * the same state type.
+     *
+     * The continuation takes the value this ReaderIO produces and returns a ReaderIO over the same
+     * state type; the returned ReaderIO binds the state, invokes this one with its own copy of the
+     * bound state, applies the continuation to the produced value, then invokes the continuation's
+     * ReaderIO with a second copy of the same state. Values that are specialisations of
+     * `std::pair` or `std::tuple` are spread into the continuation unless it accepts the value
+     * directly.
+     *
+     * The continuation is taken by value and moved into the free `and_then` as an rvalue: lvalues
+     * are copied into the parameter, and the caller's lvalue is left untouched. The result
+     * ReaderIO also takes those traits; this ReaderIO's own traits are not inherited. An invalid
+     * continuation is rejected by a friendly static_assert and yields `detail::AndThenError`.
+     *
+     * @tparam TAndThenTraits Traits used to validate this ReaderIO and the continuation pair, and
+     * for the result ReaderIO, defaulting to detail::AndThenReaderIOTraits.
+     * @param self The ReaderIO instance to chain to (explicit object parameter).
+     * @param continuation Continuation taking the produced value and returning a ReaderIO.
+     * @return The composition ReaderIO, or detail::AndThenError if the continuation is invalid
+     * (which is also rejected by a friendly static_assert).
+     */
+    template <class TAndThenTraits = detail::AndThenReaderIOTraits<>, class TContinuation>
+    [[nodiscard]] constexpr auto and_then(this auto && self, TContinuation continuation)
+    {
+        return reader_io::and_then<TAndThenTraits>(FW(self), FW(continuation));
+    }
+
+    /**
+     * Chain a continuation to this ReaderIO, naming the result.
+     *
+     * See the defaulted-traits member overload for the full contract, which is identical: the
+     * result ReaderIO takes detail::AndThenReaderIOTraits<name_cstr>, which is also used to
+     * validate this ReaderIO and the continuation pair.
+     *
+     * @param self The ReaderIO instance to chain to (explicit object parameter).
+     * @param continuation Continuation taking the produced value and returning a ReaderIO.
+     * @return The named composition ReaderIO, or detail::AndThenError if the continuation is
+     * invalid (which is also rejected by a friendly static_assert).
+     */
+    template <char const * name_cstr, class TContinuation>
+    [[nodiscard]] constexpr auto and_then(this auto && self, TContinuation continuation)
+    {
+        return reader_io::and_then<name_cstr>(FW(self), FW(continuation));
+    }
+
 
 private:
     action_type action_;
