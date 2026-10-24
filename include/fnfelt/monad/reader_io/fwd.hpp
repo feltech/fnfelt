@@ -63,7 +63,11 @@ struct ApReaderIOTraits;
 /// `reader_io::create_async`.
 template <char const * name_cstr = detail::default_reader_io_name>
 struct CreateAsyncReaderIOTraits;
+
 }  // namespace detail
+
+template <char const * name_cstr = detail::default_reader_io_name>
+struct SequenceReaderIOTraits;
 
 /// Run proxy binding a ReaderIO's action to a state for a single materialisation; defined in
 /// async.hpp.
