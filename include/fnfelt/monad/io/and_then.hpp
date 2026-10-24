@@ -3,7 +3,7 @@
 // Copyright 2026 David Feltell
 // IWYU pragma: private, include "../io.hpp"
 /**
- * @file and_then.hpp
+ * @file monad/io/and_then.hpp
  *
  * Bind (monadic composition) for the IO monad.
  */
@@ -73,6 +73,8 @@ template <class TTraits, class TSource, class TContinuation>
     if constexpr (reason.empty())
     {
         using action_type = detail::AndThenAction<source_io_type, continuation_type>;
+        // Qualified so the composition argument's namespaces (e.g. the ReaderIO monad wrapping an
+        // IO in and_then) cannot also find their own create and make the call ambiguous.
         return io::create<TTraits>(action_type{FW(source), FW(continuation)});
     }
     else
