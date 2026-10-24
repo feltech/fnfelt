@@ -119,6 +119,40 @@ public:
     }
 
     /**
+     * Repeat this reader using an independent loop accumulator.
+     *
+     * @tparam TRepeatTraits Validation and result traits.
+     * @param self Source reader.
+     * @param initial Initial accumulator.
+     * @param stepper Stepper returning an expected result.
+     * @return ReaderIO producing the loop result.
+     */
+    template <
+        class TRepeatTraits = detail::RepeatUntilReaderIOTraits<>,
+        class TInitial,
+        class TStepper>
+    [[nodiscard]] constexpr auto repeat_until(
+        this auto && self, TInitial && initial, TStepper && stepper)
+    {
+        return reader_io::repeat_until<TRepeatTraits>(FW(self), FW(initial), FW(stepper));
+    }
+
+    /**
+     * Repeat this reader, naming the result.
+     *
+     * @param self Source reader.
+     * @param initial Initial accumulator.
+     * @param stepper Stepper returning an expected result.
+     * @return Named ReaderIO producing the loop result.
+     */
+    template <char const * name_cstr, class TInitial, class TStepper>
+    [[nodiscard]] constexpr auto repeat_until(
+        this auto && self, TInitial && initial, TStepper && stepper)
+    {
+        return reader_io::repeat_until<name_cstr>(FW(self), FW(initial), FW(stepper));
+    }
+
+    /**
      * Chain a continuation to this ReaderIO, producing a ReaderIO of the continuation's value over
      * the same state type.
      *

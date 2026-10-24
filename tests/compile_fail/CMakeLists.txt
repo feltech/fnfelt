@@ -20,6 +20,7 @@ target_precompile_headers(
   <fnfelt/monad/reader_io/create.hpp>
   <fnfelt/monad/reader_io/just.hpp>
   <fnfelt/monad/reader_io/lift.hpp>
+  <fnfelt/monad/reader_io/repeat_until.hpp>
   <fnfelt/monad/reader_io/sequence.hpp>
   <fnfelt/monad/reader_io/transform.hpp>
   <fnfelt/monad/reader_io/traverse.hpp>)
