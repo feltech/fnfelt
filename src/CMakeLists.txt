@@ -93,7 +93,12 @@ target_sources(
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/tap.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/detail/tap.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/detail/lift.hpp
-         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/lift.hpp)
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/lift.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/StateIO.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/fwd.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/async.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/detail.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/detail/create.hpp)
 
 set(_package_config_dir ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME})
 
@@ -177,7 +182,8 @@ if(${PROJECT_NAME}_ENABLE_DEV)
     monad/reader_io/get_state.cpp
     monad/reader_io/split.cpp
     monad/reader_io/fanout.cpp
-    monad/reader_io/tap.cpp)
+    monad/reader_io/just.cpp
+    monad/state_io/StateIO.cpp)
   set(_main_target ${PROJECT_NAME}.main)
   target_link_libraries(${_main_target} PRIVATE doctest::doctest ${PROJECT_NAME}.lib)
   fnfelt_target_linters(${_main_target})

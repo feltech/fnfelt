@@ -4,3 +4,4 @@
 
 add_subdirectory(io)
 add_subdirectory(reader_io)
+add_subdirectory(state_io)
