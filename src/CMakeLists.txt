@@ -115,6 +115,7 @@ target_sources(
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/detail/lift.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/fwd.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/async.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/detail/async.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/detail.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/detail/create.hpp)
 
@@ -210,7 +211,8 @@ if(${PROJECT_NAME}_ENABLE_DEV)
     monad/state_io/select.cpp
     monad/state_io/ap.cpp
     monad/state_io/sequence.cpp
-    monad/state_io/traverse.cpp)
+    monad/state_io/traverse.cpp
+    monad/state_io/async.cpp)
   set(_main_target ${PROJECT_NAME}.main)
   target_link_libraries(${_main_target} PRIVATE doctest::doctest ${PROJECT_NAME}.lib)
   fnfelt_target_linters(${_main_target})
