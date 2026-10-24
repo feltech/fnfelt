@@ -112,6 +112,36 @@ public:
         return state_io::and_then<name_cstr>(FW(self), std::move(continuation));
     }
 
+    /**
+     * Transform the logical value while preserving updated state.
+     *
+     * @param self Source computation.
+     * @param transformer Plain-value transformer, directly invoked or tuple-spread.
+     * @return Transformed StateIO.
+     */
+    template <class TTransformTraits = detail::TransformStateIOTraits<>, class TTransformer>
+    // cpplint mistakes this for std::transform; no <algorithm> is used here.
+    // NOLINTNEXTLINE(build/include_what_you_use)
+    [[nodiscard]] constexpr auto transform(this auto && self, TTransformer transformer)
+    {
+        return state_io::transform<TTransformTraits>(FW(self), std::move(transformer));
+    }
+
+    /**
+     * Transform the logical value and name the result.
+     *
+     * @param self Source computation.
+     * @param transformer Plain-value transformer.
+     * @return Named transformed StateIO.
+     */
+    template <char const * name_cstr, class TTransformer>
+    // cpplint mistakes this for std::transform; no <algorithm> is used here.
+    // NOLINTNEXTLINE(build/include_what_you_use)
+    [[nodiscard]] constexpr auto transform(this auto && self, TTransformer transformer)
+    {
+        return state_io::transform<name_cstr>(FW(self), std::move(transformer));
+    }
+
 private:
     action_type action_;
 };
