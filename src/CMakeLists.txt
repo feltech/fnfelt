@@ -104,6 +104,8 @@ target_sources(
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/transform.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/select.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/ap.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/sequence.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/detail/sequence.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/detail/ap.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/detail/transform.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/detail/select.hpp
@@ -204,7 +206,8 @@ if(${PROJECT_NAME}_ENABLE_DEV)
     monad/state_io/and_then.cpp
     monad/state_io/transform.cpp
     monad/state_io/select.cpp
-    monad/state_io/ap.cpp)
+    monad/state_io/ap.cpp
+    monad/state_io/sequence.cpp)
   set(_main_target ${PROJECT_NAME}.main)
   target_link_libraries(${_main_target} PRIVATE doctest::doctest ${PROJECT_NAME}.lib)
   fnfelt_target_linters(${_main_target})
