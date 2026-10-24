@@ -96,6 +96,8 @@ target_sources(
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/lift.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/StateIO.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/create.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/lift.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/detail/lift.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/fwd.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/async.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/detail.hpp
@@ -185,7 +187,8 @@ if(${PROJECT_NAME}_ENABLE_DEV)
     monad/reader_io/fanout.cpp
     monad/reader_io/just.cpp
     monad/state_io/StateIO.cpp
-    monad/state_io/create.cpp)
+    monad/state_io/create.cpp
+    monad/state_io/lift.cpp)
   set(_main_target ${PROJECT_NAME}.main)
   target_link_libraries(${_main_target} PRIVATE doctest::doctest ${PROJECT_NAME}.lib)
   fnfelt_target_linters(${_main_target})
