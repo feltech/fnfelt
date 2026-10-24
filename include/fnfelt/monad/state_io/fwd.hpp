@@ -42,6 +42,8 @@ template <char const * name_cstr = default_state_io_name>
 struct RepeatUntilStateIOTraits;
 template <char const * name_cstr = default_state_io_name>
 struct GetStateStateIOTraits;
+template <char const * name_cstr = default_state_io_name>
+struct TapStateIOTraits;
 }  // namespace detail
 
 template <class TState, class TAction, class TTraits = detail::CreateStateIOTraits<>>
@@ -50,6 +52,10 @@ template <class TState, class TAction, class TTraits = detail::CreateStateIOTrai
 struct StateRunProxy;
 template <class TState, class TTraits = detail::CreateStateIOTraits<>, class TAction>
 [[nodiscard]] constexpr auto create(TAction && action);
+template <class TTraits = detail::TapStateIOTraits<>, class TSource, class TNext>
+[[nodiscard]] constexpr auto tap(TSource && source, TNext && next);
+template <char const * name_cstr, class TSource, class TNext>
+[[nodiscard]] constexpr auto tap(TSource && source, TNext && next);
 template <class TTraits = detail::AndThenStateIOTraits<>, class TSource, class TContinuation>
 [[nodiscard]] constexpr auto and_then(TSource && source, TContinuation && continuation);
 template <

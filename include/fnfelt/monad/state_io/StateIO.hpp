@@ -201,6 +201,32 @@ public:
         return state_io::repeat_until<name_cstr>(FW(self), FW(initial), FW(stepper));
     }
 
+    /**
+     * Discard this value and execute the next computation with updated state.
+     *
+     * @param self Source computation.
+     * @param next Next computation over the same state.
+     * @return Composed StateIO.
+     */
+    template <class TTapTraits = detail::TapStateIOTraits<>, class TNext>
+    [[nodiscard]] constexpr auto tap(this auto && self, TNext next)
+    {
+        return state_io::tap<TTapTraits>(FW(self), std::move(next));
+    }
+
+    /**
+     * Discard this value, run the next computation and name the result.
+     *
+     * @param self Source computation.
+     * @param next Next computation.
+     * @return Named StateIO.
+     */
+    template <char const * name_cstr, class TNext>
+    [[nodiscard]] constexpr auto tap(this auto && self, TNext next)
+    {
+        return state_io::tap<name_cstr>(FW(self), std::move(next));
+    }
+
 private:
     action_type action_;
 };
