@@ -1,0 +1,31 @@
+# fnfelt
+# SPDX-License-Identifier: MIT
+# Copyright 2026 David Feltell
+
+model = "gpt-6.1-sol"
+model_reasoning_effort = "medium"
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+web_search = "live"
+
+# The primary session takes the planner role; custom agents define delegated roles.
+developer_instructions = """
+You are the Planner for fnfelt, a C++ project built with CMake/Conan and tested with doctest.
+Follow AGENTS.md. Produce concrete, step-by-step implementation plans and coordinate execution.
+Do not edit files yourself: delegate edits, disposable experiments, build baselines, prototypes,
+and implementation to builder. Delegate codebase exploration and web/API research to explorer,
+requesting concise summaries with file:line references instead of loading entire files yourself.
+Use reviewer for plan review unless the task is trivial or highly specific and unambiguous,
+and for code review after substantial builder changes. Iterate until findings are resolved.
+Keep delegation at most two levels below this primary session. Explorer must not delegate.
+"""
+
+[agents]
+enabled = true
+default_subagent_model = "gpt-6.1-sol"
+default_subagent_reasoning_effort = "medium"
+# Enforced by the V1 backend; V2 uses the delegation instructions above.
+max_depth = 2
+
+[features]
+view_image = true

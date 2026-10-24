@@ -1,0 +1,54 @@
+# fnfelt
+# SPDX-License-Identifier: MIT
+# Copyright 2026 David Feltell
+
+# Literal command prefixes translated from .opencode/opencode.json.
+# These govern execution outside the sandbox, rather than every shell invocation.
+prefix_rule(
+    pattern = [[
+        "adb", "awk", "base64", "basename", "c++", "cat", "clang", "clang++",
+        "clang-format", "clang-tidy", "cmake-format", "cmake-lint", "convert",
+        "cpplint", "ctest", "curl", "cut", "date", "diff", "dirname", "doxygen",
+        "du", "echo", "env", "exit", "false", "file", "fold", "g++", "gcc",
+        "gitlint", "grep", "head", "identify", "jar", "javap", "jq", "ldd",
+        "ls", "lsof", "maestro", "magick", "md5sum", "mdformat", "mkdir",
+        "mktemp", "netstat", "ninja", "nix-locate", "nl", "nm", "od", "paste",
+        "pgrep", "printenv", "printf", "ps", "pup", "pwd", "read", "readlink",
+        "realpath", "rg", "sed", "seq", "set", "sha1sum", "sha256sum", "sleep",
+        "sort", "ss", "stat", "strings", "tabs", "tail", "tee", "test", "touch",
+        "tr", "true", "type", "uniq", "wait", "wc", "which", "xxd", "xq", "yq",
+    ]],
+    decision = "allow",
+)
+
+prefix_rule(pattern = ["cmake", ["--build", "--help", "--install", "--preset", "--version", "-S"]], decision = "allow")
+prefix_rule(pattern = ["conan", ["--version", "graph", "list", "install"]], decision = "allow")
+prefix_rule(pattern = ["gh", ["issue", "pr"], ["list", "view"]], decision = "allow")
+prefix_rule(pattern = ["gh", "search", ["code", "issues", "prs"]], decision = "allow")
+prefix_rule(
+    pattern = ["git", [
+        "--version", "add", "blame", "branch", "cat", "cat-file", "check-ignore",
+        "count-objects", "describe", "diff", "fetch", "for-each-ref", "fsck", "grep",
+        "hash-object", "log", "ls-files", "ls-remote", "ls-tree", "merge-base",
+        "merge-file", "range-diff", "reflog", "rev-list", "rev-parse", "show",
+        "show-ref", "stash", "status", "verify-commit", "worktree",
+    ]],
+    decision = "allow",
+)
+prefix_rule(pattern = ["git", "--no-pager", ["diff", "log", "show"]], decision = "allow")
+prefix_rule(pattern = ["git", "config", ["--get", "--get-all", "--list"]], decision = "allow")
+prefix_rule(pattern = ["git", "checkout", "--detach"], decision = "allow")
+prefix_rule(pattern = ["git", "checkout", "--"], decision = "prompt")
+prefix_rule(pattern = ["git", "remote", "-v"], decision = "allow")
+prefix_rule(pattern = ["git", "reset", ["--soft", "-q", "HEAD"]], decision = "allow")
+prefix_rule(pattern = ["git", "commit", "-C"], decision = "allow")
+
+# AGENTS.md requires this wrapper outside an existing development shell.
+# Do not carry over OpenCode's conflicting "nix develop *": "deny" rule.
+prefix_rule(pattern = ["nix", "develop", "./build_env", "--command"], decision = "allow")
+
+# Prefer edit tools and request approval for scripts, as required by AGENTS.md.
+prefix_rule(pattern = [["bash", "sh", "zsh", "python", "python3"]], decision = "prompt")
+prefix_rule(pattern = ["sed", "-i"], decision = "prompt")
+prefix_rule(pattern = ["find", "/"], decision = "forbidden", justification = "Use a targeted project search with rg instead.")
+prefix_rule(pattern = ["find", "/nix/store"], decision = "forbidden", justification = "Use nix-locate or a targeted path instead.")
