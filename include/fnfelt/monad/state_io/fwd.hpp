@@ -24,6 +24,8 @@ template <char const * name_cstr = default_state_io_name>
 struct LiftStateIOTraits;
 template <char const * name_cstr = default_state_io_name>
 struct JustStateIOTraits;
+template <char const * name_cstr = default_state_io_name>
+struct AndThenStateIOTraits;
 }  // namespace detail
 
 template <class TState, class TAction, class TTraits = detail::CreateStateIOTraits<>>
@@ -32,6 +34,10 @@ template <class TState, class TAction, class TTraits = detail::CreateStateIOTrai
 struct StateRunProxy;
 template <class TState, class TTraits = detail::CreateStateIOTraits<>, class TAction>
 [[nodiscard]] constexpr auto create(TAction && action);
+template <class TTraits = detail::AndThenStateIOTraits<>, class TSource, class TContinuation>
+[[nodiscard]] constexpr auto and_then(TSource && source, TContinuation && continuation);
+template <char const * name_cstr, class TSource, class TContinuation>
+[[nodiscard]] constexpr auto and_then(TSource && source, TContinuation && continuation);
 template <char const * name_cstr, class TState, class TAction>
 [[nodiscard]] constexpr auto create(TAction && action);
 }  // namespace fnfelt::monad::state_io

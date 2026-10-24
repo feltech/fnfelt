@@ -83,6 +83,35 @@ public:
         }
     }
 
+    /**
+     * Chain a continuation receiving the logical value and returning a StateIO.
+     *
+     * Updated state is moved into the returned computation. Pair and tuple values are spread
+     * only when direct invocation is unavailable.
+     *
+     * @param self Source computation.
+     * @param continuation Continuation returning a StateIO over the same state type.
+     * @return Composed StateIO.
+     */
+    template <class TAndThenTraits = detail::AndThenStateIOTraits<>, class TContinuation>
+    [[nodiscard]] constexpr auto and_then(this auto && self, TContinuation continuation)
+    {
+        return state_io::and_then<TAndThenTraits>(FW(self), std::move(continuation));
+    }
+
+    /**
+     * Chain a continuation and name the result for diagnostics.
+     *
+     * @param self Source computation.
+     * @param continuation Continuation returning a StateIO.
+     * @return Named composition.
+     */
+    template <char const * name_cstr, class TContinuation>
+    [[nodiscard]] constexpr auto and_then(this auto && self, TContinuation continuation)
+    {
+        return state_io::and_then<name_cstr>(FW(self), std::move(continuation));
+    }
+
 private:
     action_type action_;
 };
