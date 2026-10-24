@@ -99,6 +99,7 @@ target_sources(
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/lift.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/just.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/detail/just.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/detail/bind.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/detail/lift.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/fwd.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/async.hpp
