@@ -32,6 +32,11 @@ namespace detail
 {
 template <char const * name_cstr = detail::default_reader_io_name>
 struct CreateReaderIOTraits;
+
+/// Traits validating the state-first coroutine function and arguments provided to
+/// `reader_io::create_async`.
+template <char const * name_cstr = detail::default_reader_io_name>
+struct CreateAsyncReaderIOTraits;
 }  // namespace detail
 
 /// Traits validating the value provided to `reader_io::just`.
