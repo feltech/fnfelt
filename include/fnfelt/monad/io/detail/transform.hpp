@@ -3,7 +3,7 @@
 // Copyright 2026 David Feltell
 // IWYU pragma: private, include "../../io.hpp"
 /**
- * @file detail/transform.hpp
+ * @file monad/io/detail/transform.hpp
  *
  * Implementation details for the IO monad's functor mapping.
  */

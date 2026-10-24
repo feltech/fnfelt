@@ -165,6 +165,52 @@ public:
         return reader_io::and_then<name_cstr>(FW(self), FW(continuation));
     }
 
+    /**
+     * Transform this ReaderIO's produced value with a transformer, re-wrapping the plain result.
+     *
+     * The transformer takes the value this ReaderIO produces and returns a plain value; the
+     * returned ReaderIO binds the state, invokes this one, and produces an IO of the transformer's
+     * value. Values that are specialisations of `std::pair` or `std::tuple` are spread into the
+     * transformer unless it accepts the value directly. Unlike `and_then`, the transformer's
+     * result is not run as an IO.
+     *
+     * An invalid transformer is rejected by a friendly static_assert and yields
+     * `detail::TransformError`.
+     *
+     * @tparam TTransformTraits Traits used to validate this ReaderIO and transformer pair, and
+     * for the result ReaderIO, defaulting to detail::TransformReaderIOTraits.
+     * @param self The ReaderIO instance to transform (explicit object parameter).
+     * @param transformer Transformer taking the produced value and returning a plain value.
+     * @return The composition ReaderIO, or detail::TransformError if the transformer is invalid
+     * (which is also rejected by a friendly static_assert).
+     */
+    template <class TTransformTraits = detail::TransformReaderIOTraits<>, class TTransformer>
+    // cpplint mistakes this for std::transform; no <algorithm> is used here.
+    // NOLINTNEXTLINE(build/include_what_you_use)
+    [[nodiscard]] constexpr auto transform(this auto && self, TTransformer transformer)
+    {
+        return reader_io::transform<TTransformTraits>(FW(self), FW(transformer));
+    }
+
+    /**
+     * Transform this ReaderIO's produced value with a transformer, naming the result.
+     *
+     * This overload allows the returned ReaderIO type to be named, for use in diagnostics.
+     *
+     * See the defaulted-traits member overload for the full contract, which is identical.
+     *
+     * @param self The ReaderIO instance to transform (explicit object parameter).
+     * @param transformer Transformer taking the produced value and returning a plain value.
+     * @return The named composition ReaderIO, or detail::TransformError if the transformer is
+     * invalid (which is also rejected by a friendly static_assert).
+     */
+    template <char const * name_cstr, class TTransformer>
+    // cpplint mistakes this for std::transform; no <algorithm> is used here.
+    // NOLINTNEXTLINE(build/include_what_you_use)
+    [[nodiscard]] constexpr auto transform(this auto && self, TTransformer transformer)
+    {
+        return reader_io::transform<name_cstr>(FW(self), FW(transformer));
+    }
 
 private:
     action_type action_;
