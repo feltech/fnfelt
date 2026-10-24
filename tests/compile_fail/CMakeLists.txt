@@ -16,6 +16,7 @@ target_precompile_headers(
   <fnfelt/monad/reader_io.hpp>
   <fnfelt/monad/state_io/StateIO.hpp>
   <fnfelt/monad/state_io/and_then.hpp>
+  <fnfelt/monad/state_io/ap.hpp>
   <fnfelt/monad/state_io/create.hpp>
   <fnfelt/monad/state_io/just.hpp>
   <fnfelt/monad/state_io/lift.hpp>
