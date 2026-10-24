@@ -11,8 +11,13 @@
 #include <meta>
 
 #include <functional>
+#include <tuple>
+#include <type_traits>
 #include <utility>
 
+#include <fnfelt/monad/io/IO.hpp>
+#include <fnfelt/monad/state_io/create.hpp>
+#include <fnfelt/monad/state_io/detail/async.hpp>
 #include <fnfelt/monad/state_io/detail/create.hpp>
 #include <fnfelt/monad/state_io/fwd.hpp>
 
@@ -76,6 +81,53 @@ struct StateRunProxy
         }
     }
 };
+/**
+ * Create a StateIO from a state-first asynchronous leaf.
+ *
+ * The stateless coroutine receives libfork's self argument, owned state and stored arguments.
+ * It returns a task producing a pair of logical value and updated state. Execution uses the
+ * enclosing scheduler.
+ *
+ * @param fn Stateless coroutine function.
+ * @param args Stored arguments following the state.
+ * @return StateIO wrapping the asynchronous leaf.
+ */
+template <
+    class TState,
+    class TTraits = detail::CreateAsyncStateIOTraits<>,
+    class TFn,
+    class... TArgs>
+[[nodiscard]] constexpr auto create_async(TFn fn, TArgs &&... args)
+{
+    using fn_type = std::decay_t<TFn>;
+    using arg_tuple_type = std::tuple<TState, std::decay_t<TArgs>...>;
+    static constexpr auto reason = TTraits::validate_create_async(^^fn_type, ^^arg_tuple_type);
+    static_assert(reason.empty(), detail::create_async_error_msg<^^fn_type>(TTraits::name, reason));
+    if constexpr (reason.empty())
+    {
+        return state_io::create<TState, TTraits>(
+            detail::CreateAsyncAction<TState, fn_type, std::decay_t<TArgs>...>{
+                std::move(fn), std::tuple<std::decay_t<TArgs>...>{FW(args)...}});
+    }
+    else
+    {
+        return detail::CreateAsyncError{};
+    }
+}
+
+/**
+ * Create and name a state-first asynchronous leaf.
+ *
+ * @param fn Stateless coroutine function.
+ * @param args Stored arguments following the state.
+ * @return Named asynchronous StateIO.
+ */
+template <char const * name_cstr, class TState, class TFn, class... TArgs>
+[[nodiscard]] constexpr auto create_async(TFn fn, TArgs &&... args)
+{
+    return state_io::create_async<TState, detail::CreateAsyncStateIOTraits<name_cstr>>(
+        std::move(fn), FW(args)...);
+}
 }  // namespace fnfelt::monad::state_io
 
 #include <fnfelt/macros_pop.hpp>
