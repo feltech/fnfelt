@@ -5,4 +5,5 @@
 add_subdirectory(ReaderIO)
 add_subdirectory(async)
 add_subdirectory(create)
+add_subdirectory(just)
 add_subdirectory(lift)

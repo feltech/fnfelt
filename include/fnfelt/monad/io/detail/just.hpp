@@ -3,7 +3,7 @@
 // Copyright 2026 David Feltell
 // IWYU pragma: private, include "../../io.hpp"
 /**
- * @file detail/just.hpp
+ * @file monad/io/detail/just.hpp
  *
  * Implementation details for lifting a value into the IO monad.
  */

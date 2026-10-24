@@ -33,6 +33,10 @@ namespace detail
 template <char const * name_cstr = detail::default_reader_io_name>
 struct CreateReaderIOTraits;
 
+/// Traits validating the value provided to `reader_io::just`.
+template <char const * name_cstr = detail::default_reader_io_name>
+struct JustReaderIOTraits;
+
 /// Traits validating the source IO provided to `reader_io::lift`.
 template <char const * name_cstr = detail::default_reader_io_name>
 struct LiftReaderIOTraits;
@@ -42,10 +46,6 @@ struct LiftReaderIOTraits;
 template <char const * name_cstr = detail::default_reader_io_name>
 struct CreateAsyncReaderIOTraits;
 }  // namespace detail
-
-/// Traits validating the value provided to `reader_io::just`.
-template <char const * name_cstr = detail::default_reader_io_name>
-struct JustReaderIOTraits;
 
 /// Traits validating the source ReaderIO and continuation function provided to
 /// `reader_io::and_then`.
