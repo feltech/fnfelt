@@ -227,6 +227,34 @@ public:
         return state_io::tap<name_cstr>(FW(self), std::move(next));
     }
 
+    /**
+     * Replace state using a const reference to the preserved logical value.
+     *
+     * Pair and tuple elements are spread when direct invocation is unavailable; state is last.
+     *
+     * @param self Source computation.
+     * @param mutator Function accepting const value& and owned state, returning new state.
+     * @return Value-preserving StateIO.
+     */
+    template <class TStoreTraits = detail::StoreStateIOTraits<>, class TMutator>
+    [[nodiscard]] constexpr auto store(this auto && self, TMutator mutator)
+    {
+        return state_io::store<TStoreTraits>(FW(self), std::move(mutator));
+    }
+
+    /**
+     * Replace state while preserving the logical value and name the result.
+     *
+     * @param self Source computation.
+     * @param mutator State replacement function.
+     * @return Named StateIO.
+     */
+    template <char const * name_cstr, class TMutator>
+    [[nodiscard]] constexpr auto store(this auto && self, TMutator mutator)
+    {
+        return state_io::store<name_cstr>(FW(self), std::move(mutator));
+    }
+
 private:
     action_type action_;
 };
