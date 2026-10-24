@@ -13,7 +13,8 @@ target_precompile_headers(
   PRIVATE
   <meta>
   <fnfelt/monad/io.hpp>
-  <fnfelt/monad/reader_io.hpp>)
+  <fnfelt/monad/reader_io.hpp>
+  <fnfelt/monad/state_io/StateIO.hpp>)
 
 # fnfelt_compile_fail(<name> SOURCE <file.cpp> ERROR_REGEX <regex>)
 #
