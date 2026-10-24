@@ -18,8 +18,9 @@
 #include <type_traits>
 #include <utility>
 
-#include <fnfelt/monad/reader_io/detail/create.hpp>
-#include <fnfelt/monad/reader_io/fwd.hpp>
+#include <fnfelt/monad/reader_io/ReaderIO.hpp>
+#include <fnfelt/monad/reader_io/create.hpp>
+#include <fnfelt/monad/reader_io/detail/async.hpp>
 
 #include <fnfelt/macros_push.hpp>
 
@@ -103,6 +104,86 @@ struct ReaderRunProxy
     }
 };
 
+/**
+ * Lifts a state-first asynchronous leaf into the ReaderIO monad with the given traits (default
+ * detail::CreateAsyncReaderIOTraits).
+ *
+ * The coroutine function's signature is `(auto, TState, TArgs...) -> lf::task` - libfork's
+ * generated self argument, then the ReaderIO's bound state as the first caller argument, then the
+ * stored arguments. The returned ReaderIO yields, per invocation, an asynchronous leaf IO whose
+ * coroutine receives the bound state and the stored arguments; the leaf is validated like io's
+ * own (stateless function, constant-expression entry, `lf::task` result) on the validation tuple
+ * `(TState, TArgs...)`, and the state/type pair is validated by the inherited action validation.
+ *
+ * The function and arguments are decayed and perfect-forwarded on input: lvalues are copied,
+ * rvalues moved. An invalid combination is rejected by a friendly static_assert and yields
+ * `detail::CreateAsyncError`.
+ *
+ * @tparam TState The ReaderIO's state type.
+ * @tparam TTraits Traits used to validate the coroutine/argument combination and for the result
+ * ReaderIO, defaulting to detail::CreateAsyncReaderIOTraits.
+ * @tparam TFn Deduced stateless coroutine function type.
+ * @tparam TArgs Deduced stored argument types.
+ * @param fn The stateless coroutine function.
+ * @param args Arguments passed to the coroutine after the state (moved/copied per value
+ * category).
+ * @return ReaderIO yielding the async leaf IO with TTraits, or detail::CreateAsyncError if the
+ * combination is invalid (which is also rejected by a friendly static_assert).
+ */
+template <
+    class TState,
+    class TTraits = detail::CreateAsyncReaderIOTraits<>,
+    class TFn,
+    class... TArgs>
+[[nodiscard]] constexpr auto create_async(TFn fn, TArgs &&... args)
+{
+    using fn_type = std::decay_t<TFn>;
+    using arg_tuple_type = std::tuple<TState, std::decay_t<TArgs>...>;
+    static constexpr auto reason = TTraits::validate_create_async(^^fn_type, ^^arg_tuple_type);
+    static_assert(reason.empty(), detail::create_async_error_msg<^^fn_type>(TTraits::name, reason));
+    if constexpr (reason.empty())
+    {
+        using action_type = detail::CreateAsyncAction<TState, fn_type, std::decay_t<TArgs>...>;
+        // Qualified so the stored argument types' namespaces cannot also find a foreign create of
+        // the same shape and bind the call ambiguously.
+        return reader_io::create<TState, TTraits>(
+            action_type{FW(fn), std::tuple<std::decay_t<TArgs>...>{FW(args)...}});
+    }
+    else
+    {
+        return detail::CreateAsyncError{};
+    }
+}
+
+/**
+ * Lifts a state-first asynchronous leaf into the ReaderIO monad, naming it for diagnostics.
+ *
+ * A function template, unlike class template argument deduction, may take its leading template
+ * arguments explicitly while deducing the function and arguments. Overloads on the first template
+ * argument: a name (`char const *` non-type parameter) or a traits type.
+ *
+ * The result ReaderIO takes detail::CreateAsyncReaderIOTraits<name_cstr>, which is also used to
+ * validate the combination.
+ *
+ * See the defaulted-traits overload for the full contract, which is identical.
+ *
+ * @tparam name_cstr Null-terminated name with static storage duration (e.g. `"My ReaderIO"_ss`).
+ * @tparam TState The ReaderIO's state type.
+ * @tparam TFn Deduced stateless coroutine function type.
+ * @tparam TArgs Deduced stored argument types.
+ * @param fn The stateless coroutine function.
+ * @param args Arguments passed to the coroutine after the state (moved/copied per value
+ * category).
+ * @return ReaderIO yielding the async leaf IO with detail::CreateAsyncReaderIOTraits<name_cstr>, or
+ * detail::CreateAsyncError if the combination is invalid (which is also rejected by a friendly
+ * static_assert).
+ */
+template <char const * name_cstr, class TState, class TFn, class... TArgs>
+[[nodiscard]] constexpr auto create_async(TFn fn, TArgs &&... args)
+{
+    return reader_io::create_async<TState, detail::CreateAsyncReaderIOTraits<name_cstr>>(
+        std::move(fn), FW(args)...);
+}
 }  // namespace fnfelt::monad::reader_io
 
 #include <fnfelt/macros_pop.hpp>
