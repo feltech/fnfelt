@@ -38,6 +38,8 @@ template <char const * name_cstr = default_state_io_name>
 struct TraverseStateIOTraits;
 template <char const * name_cstr = default_state_io_name>
 struct CreateAsyncStateIOTraits;
+template <char const * name_cstr = default_state_io_name>
+struct RepeatUntilStateIOTraits;
 }  // namespace detail
 
 template <class TState, class TAction, class TTraits = detail::CreateStateIOTraits<>>
@@ -48,6 +50,16 @@ template <class TState, class TTraits = detail::CreateStateIOTraits<>, class TAc
 [[nodiscard]] constexpr auto create(TAction && action);
 template <class TTraits = detail::AndThenStateIOTraits<>, class TSource, class TContinuation>
 [[nodiscard]] constexpr auto and_then(TSource && source, TContinuation && continuation);
+template <
+    class TTraits = detail::RepeatUntilStateIOTraits<>,
+    class TSource,
+    class TInitial,
+    class TStepper>
+[[nodiscard]] constexpr auto repeat_until(
+    TSource && source, TInitial && initial, TStepper && stepper);
+template <char const * name_cstr, class TSource, class TInitial, class TStepper>
+[[nodiscard]] constexpr auto repeat_until(
+    TSource && source, TInitial && initial, TStepper && stepper);
 template <class TTraits = detail::TransformStateIOTraits<>, class TSource, class TTransformer>
 [[nodiscard]] constexpr auto transform(TSource && source, TTransformer && transformer);
 template <class TTraits = detail::SelectStateIOTraits<>, class TChoice, class TFallback>
