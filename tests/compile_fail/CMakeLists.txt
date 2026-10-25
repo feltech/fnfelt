@@ -17,6 +17,7 @@ target_precompile_headers(
   <fnfelt/monad/io/ap.hpp>
   <fnfelt/monad/io/async.hpp>
   <fnfelt/monad/io/create.hpp>
+  <fnfelt/monad/io/fanout.hpp>
   <fnfelt/monad/io/just.hpp>
   <fnfelt/monad/io/repeat_until.hpp>
   <fnfelt/monad/io/sequence.hpp>
