@@ -21,6 +21,7 @@ target_precompile_headers(
   <fnfelt/monad/io/just.hpp>
   <fnfelt/monad/io/repeat_until.hpp>
   <fnfelt/monad/io/sequence.hpp>
+  <fnfelt/monad/io/split.hpp>
   <fnfelt/monad/io/tap.hpp>
   <fnfelt/monad/io/transform.hpp>
   <fnfelt/monad/io/traverse.hpp>)
