@@ -33,6 +33,9 @@ namespace detail
 template <char const * name_cstr = detail::default_reader_io_name>
 struct CreateReaderIOTraits;
 
+template <char const * name_cstr = detail::default_reader_io_name>
+struct TapReaderIOTraits;
+
 /// Traits validating the value provided to `reader_io::just`.
 template <char const * name_cstr = detail::default_reader_io_name>
 struct JustReaderIOTraits;
@@ -124,6 +127,11 @@ template <
 template <char const * name_cstr, class TSource, class TInitial, class TStepper>
 [[nodiscard]] constexpr auto repeat_until(
     TSource && source, TInitial && initial, TStepper && stepper);
+template <class TTraits = detail::TapReaderIOTraits<>, class TSource, class TNext>
+[[nodiscard]] constexpr auto tap(TSource && source, TNext && next);
+
+template <char const * name_cstr, class TSource, class TNext>
+[[nodiscard]] constexpr auto tap(TSource && source, TNext && next);
 /// @endcond
 
 }  // namespace fnfelt::monad::reader_io

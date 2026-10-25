@@ -274,6 +274,32 @@ public:
         return reader_io::select<name_cstr>(FW(self), FW(fallback));
     }
 
+    /**
+     * Discard this ReaderIO's complete value and run the next computation.
+     *
+     * @param self Source ReaderIO.
+     * @param next Next ReaderIO over the same copyable environment.
+     * @return ReaderIO producing the next value.
+     */
+    template <class TTapTraits = detail::TapReaderIOTraits<>, class TNext>
+    [[nodiscard]] constexpr auto tap(this auto && self, TNext next)
+    {
+        return reader_io::tap<TTapTraits>(FW(self), FW(next));
+    }
+
+    /**
+     * Discard this value, run the next ReaderIO and name the result.
+     *
+     * @param self Source ReaderIO.
+     * @param next Next ReaderIO over the same copyable environment.
+     * @return Named ReaderIO producing the next value.
+     */
+    template <char const * name_cstr, class TNext>
+    [[nodiscard]] constexpr auto tap(this auto && self, TNext next)
+    {
+        return reader_io::tap<name_cstr>(FW(self), FW(next));
+    }
+
 private:
     action_type action_;
 };
