@@ -267,6 +267,32 @@ public:
         return io::repeat_until<name_cstr>(FW(self), FW(initial_state), FW(stepper));
     }
 
+    /**
+     * Discard this IO's complete value and run the next computation.
+     *
+     * @param self Source IO.
+     * @param next Next IO.
+     * @return IO producing the next value.
+     */
+    template <class TTapTraits = detail::TapIOTraits<>, class TNext>
+    [[nodiscard]] constexpr auto tap(this auto && self, TNext next)
+    {
+        return io::tap<TTapTraits>(FW(self), FW(next));
+    }
+
+    /**
+     * Discard this value, run the next IO and name the result.
+     *
+     * @param self Source IO.
+     * @param next Next IO.
+     * @return Named IO producing the next value.
+     */
+    template <char const * name_cstr, class TNext>
+    [[nodiscard]] constexpr auto tap(this auto && self, TNext next)
+    {
+        return io::tap<name_cstr>(FW(self), FW(next));
+    }
+
 private:
     action_type action_;
 };
