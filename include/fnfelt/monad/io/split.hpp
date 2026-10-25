@@ -1,0 +1,65 @@
+// fnfelt
+// SPDX-License-Identifier: MIT
+// Copyright 2026 David Feltell
+// IWYU pragma: private, include "../io.hpp"
+/**
+ * @file monad/io/split.hpp
+ *
+ * Apply IO continuations to distinct tuple elements.
+ */
+#pragma once
+
+#include <meta>
+
+#include <tuple>
+#include <utility>
+
+#include <fnfelt/monad/io/detail/split.hpp>
+
+namespace fnfelt::monad::io
+{
+/**
+ * Adapt continuations to consume corresponding tuple values and collect their IO results.
+ *
+ * Calling the adapter takes ownership of a tuple with the same size as the continuation pack,
+ * then invokes each continuation with its moved corresponding element, preferring direct invocation
+ * to pair/tuple spreading. Continuation invocation order is unspecified.
+ * The resulting IO is lazy. Branches overlap under one runtime scheduler; constant evaluation
+ * runs them inline. Results retain input order.
+ * An empty adapter produces an empty tuple.
+ * Lvalue adapter calls copy stored continuations; rvalue calls move them. Input elements may be
+ * move-only.
+ *
+ * @param functions Continuations returning IOs.
+ * @return Callable producing the collected IO for its input tuple.
+ */
+template <class TTraits = detail::SplitIOTraits<>, class... TFunctions>
+[[nodiscard]] constexpr auto split(TFunctions... functions)
+{
+    constexpr auto reason = TTraits::validate_split_factory(^^std::tuple<TFunctions...>);
+    static_assert(
+        reason.empty(),
+        detail::sequence_error_msg<^^std::tuple<TFunctions...>>(TTraits::name, reason));
+    if constexpr (reason.empty())
+    {
+        return detail::SplitAction<TTraits, std::tuple<TFunctions...>>{
+            std::tuple<TFunctions...>{std::move(functions)...}};
+    }
+    else
+    {
+        return detail::SplitError{};
+    }
+}
+
+/**
+ * Build an element-wise continuation adapter naming its result.
+ *
+ * @param functions IO-producing continuations.
+ * @return Named split adapter.
+ */
+template <char const * name_cstr, class... TFunctions>
+[[nodiscard]] constexpr auto split(TFunctions... functions)
+{
+    return io::split<detail::SplitIOTraits<name_cstr>>(std::move(functions)...);
+}
+}  // namespace fnfelt::monad::io
