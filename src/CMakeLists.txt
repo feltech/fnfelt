@@ -42,6 +42,8 @@ target_sources(
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/select.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/traverse.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/just.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/fanout.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/fanout.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/tap.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/tap.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/repeat_until.hpp
@@ -104,6 +106,7 @@ if(${PROJECT_NAME}_ENABLE_DEV)
     monad/io/detail.cpp
     monad/io/traits.cpp
     monad/io/just.cpp
+    monad/io/fanout.cpp
     monad/io/tap.cpp
     monad/io/and_then.cpp
     monad/io/repeat_until.cpp
