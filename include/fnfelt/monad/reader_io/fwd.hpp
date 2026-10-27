@@ -51,6 +51,10 @@ struct AndThenReaderIOTraits;
 template <char const * name_cstr = detail::default_reader_io_name>
 struct TransformReaderIOTraits;
 
+/// Traits validating a choice reader and its conditional fallback.
+template <char const * name_cstr = detail::default_reader_io_name>
+struct SelectReaderIOTraits;
+
 /// Traits validating the state-first coroutine function and arguments provided to
 /// `reader_io::create_async`.
 template <char const * name_cstr = detail::default_reader_io_name>
@@ -94,6 +98,12 @@ template <char const * name_cstr, class TSource, class TTransformer>
 // cpplint mistakes this for std::transform; no <algorithm> is used here.
 // NOLINTNEXTLINE(build/include_what_you_use)
 [[nodiscard]] constexpr auto transform(TSource && source, TTransformer && transformer);
+template <class TTraits = detail::SelectReaderIOTraits<>, class TChoice, class TFallback>
+[[nodiscard]] constexpr auto select(TChoice && choice, TFallback && fallback);
+
+template <char const * name_cstr, class TChoice, class TFallback>
+[[nodiscard]] constexpr auto select(TChoice && choice, TFallback && fallback);
+
 /// @endcond
 
 }  // namespace fnfelt::monad::reader_io

@@ -212,6 +212,34 @@ public:
         return reader_io::transform<name_cstr>(FW(self), FW(transformer));
     }
 
+    /**
+     * Complete this expected result with a conditional reader effect.
+     *
+     * @tparam TSelectTraits Validation and result traits.
+     * @param self Choice ReaderIO.
+     * @param fallback Reader producing a function for the unexpected input.
+     * @return Selective ReaderIO.
+     */
+    template <class TSelectTraits = detail::SelectReaderIOTraits<>, class TFallback>
+    [[nodiscard]] constexpr auto select(this auto && self, TFallback && fallback)
+    {
+        return reader_io::select<TSelectTraits>(FW(self), FW(fallback));
+    }
+
+    /**
+     * Complete this expected result with a named conditional reader effect.
+     *
+     * @tparam name_cstr Diagnostic name with static storage duration.
+     * @param self Choice ReaderIO.
+     * @param fallback Reader producing a function for the unexpected input.
+     * @return Named selective ReaderIO.
+     */
+    template <char const * name_cstr, class TFallback>
+    [[nodiscard]] constexpr auto select(this auto && self, TFallback && fallback)
+    {
+        return reader_io::select<name_cstr>(FW(self), FW(fallback));
+    }
+
 private:
     action_type action_;
 };
