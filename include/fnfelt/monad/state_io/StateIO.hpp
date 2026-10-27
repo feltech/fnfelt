@@ -142,6 +142,32 @@ public:
         return state_io::transform<name_cstr>(FW(self), std::move(transformer));
     }
 
+    /**
+     * Complete an expected result with a conditional fallback computation.
+     *
+     * @param self Choice computation.
+     * @param fallback Computation producing a function for an unexpected choice.
+     * @return Selective StateIO.
+     */
+    template <class TSelectTraits = detail::SelectStateIOTraits<>, class TFallback>
+    [[nodiscard]] constexpr auto select(this auto && self, TFallback && fallback)
+    {
+        return state_io::select<TSelectTraits>(FW(self), FW(fallback));
+    }
+
+    /**
+     * Complete an expected result and name the selective computation.
+     *
+     * @param self Choice computation.
+     * @param fallback Computation producing a function for an unexpected choice.
+     * @return Named selective StateIO.
+     */
+    template <char const * name_cstr, class TFallback>
+    [[nodiscard]] constexpr auto select(this auto && self, TFallback && fallback)
+    {
+        return state_io::select<name_cstr>(FW(self), FW(fallback));
+    }
+
 private:
     action_type action_;
 };

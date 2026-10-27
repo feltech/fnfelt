@@ -28,6 +28,8 @@ template <char const * name_cstr = default_state_io_name>
 struct AndThenStateIOTraits;
 template <char const * name_cstr = default_state_io_name>
 struct TransformStateIOTraits;
+template <char const * name_cstr = default_state_io_name>
+struct SelectStateIOTraits;
 }  // namespace detail
 
 template <class TState, class TAction, class TTraits = detail::CreateStateIOTraits<>>
@@ -40,6 +42,10 @@ template <class TTraits = detail::AndThenStateIOTraits<>, class TSource, class T
 [[nodiscard]] constexpr auto and_then(TSource && source, TContinuation && continuation);
 template <class TTraits = detail::TransformStateIOTraits<>, class TSource, class TTransformer>
 [[nodiscard]] constexpr auto transform(TSource && source, TTransformer && transformer);
+template <class TTraits = detail::SelectStateIOTraits<>, class TChoice, class TFallback>
+[[nodiscard]] constexpr auto select(TChoice && choice, TFallback && fallback);
+template <char const * name_cstr, class TChoice, class TFallback>
+[[nodiscard]] constexpr auto select(TChoice && choice, TFallback && fallback);
 template <char const * name_cstr, class TSource, class TTransformer>
 // cpplint mistakes this for std::transform; no <algorithm> is used here.
 // NOLINTNEXTLINE(build/include_what_you_use)
