@@ -178,6 +178,34 @@ public:
         return io::transform<name_cstr>(FW(self), FW(transformer));
     }
 
+    /**
+     * Complete this expected result with a conditional fallback effect.
+     *
+     * @tparam TSelectTraits Validation and result traits.
+     * @param self Choice IO.
+     * @param fallback IO producing a function for the unexpected input.
+     * @return Selective IO.
+     */
+    template <class TSelectTraits = detail::SelectIOTraits<>, class TFallback>
+    [[nodiscard]] constexpr auto select(this auto && self, TFallback && fallback)
+    {
+        return io::select<TSelectTraits>(FW(self), FW(fallback));
+    }
+
+    /**
+     * Complete this expected result with a named conditional fallback effect.
+     *
+     * @tparam name_cstr Diagnostic name with static storage duration.
+     * @param self Choice IO.
+     * @param fallback IO producing a function for the unexpected input.
+     * @return Named selective IO.
+     */
+    template <char const * name_cstr, class TFallback>
+    [[nodiscard]] constexpr auto select(this auto && self, TFallback && fallback)
+    {
+        return io::select<name_cstr>(FW(self), FW(fallback));
+    }
+
 private:
     action_type action_;
 };

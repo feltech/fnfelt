@@ -85,6 +85,10 @@ struct AndThenIOTraits;
 template <char const * name_cstr = detail::default_io_name>
 struct TransformIOTraits;
 
+/// Traits validating a choice IO and its conditional fallback.
+template <char const * name_cstr = detail::default_io_name>
+struct SelectIOTraits;
+
 /// Traits validating the IO-wrapped function and value provided to `io::ap`.
 template <char const * name_cstr = detail::default_io_name>
 struct ApIOTraits;
@@ -141,6 +145,12 @@ template <char const * name_cstr, class TSource, class TTransformer>
 // cpplint mistakes this for std::transform; no <algorithm> is used here.
 // NOLINTNEXTLINE(build/include_what_you_use)
 [[nodiscard]] constexpr auto transform(TSource && source, TTransformer && transformer);
+
+template <class TTraits = detail::SelectIOTraits<>, class TChoice, class TFallback>
+[[nodiscard]] constexpr auto select(TChoice && choice, TFallback && fallback);
+
+template <char const * name_cstr, class TChoice, class TFallback>
+[[nodiscard]] constexpr auto select(TChoice && choice, TFallback && fallback);
 
 // Forward declarations for the free traverse functions; defined and documented in traverse.hpp. The
 // first argument is taken by value so an rvalue moves its element values and an lvalue copies

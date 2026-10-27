@@ -37,8 +37,10 @@ target_sources(
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/fwd.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/just.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/transform.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/select.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/just.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/transform.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/select.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/and_then.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/ap.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/async.hpp
@@ -96,6 +98,7 @@ if(${PROJECT_NAME}_ENABLE_DEV)
     monad/io/just.cpp
     monad/io/and_then.cpp
     monad/io/transform.cpp
+    monad/io/select.cpp
     monad/io/create.cpp
     monad/io/ap.cpp
     monad/io/async.cpp
