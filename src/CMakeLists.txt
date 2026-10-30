@@ -22,6 +22,8 @@ target_sources(
          BASE_DIRS
          ${PROJECT_SOURCE_DIR}/include
          FILES
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/interop/stdexec.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/interop/detail/stdexec.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/static_string.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/macros_push.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/macros_pop.hpp
@@ -161,6 +163,8 @@ target_compile_features(${_lib_target} INTERFACE cxx_std_26)
 set_target_properties(${_lib_target} PROPERTIES CXX_EXTENSIONS OFF)
 
 target_link_libraries(${_lib_target} INTERFACE immer::immer libfork::libfork STDEXEC::stdexec)
+# GCC's default C++26 contract violation handler is provided by its experimental runtime.
+target_link_libraries(${_lib_target} INTERFACE "$<$<CXX_COMPILER_ID:GNU>:stdc++exp>")
 
 # Only the reflection flag is exported: warning flags are a project-internal policy applied by
 # fnfelt_target_linters, so consumers keep ownership of their own warning settings.
@@ -175,6 +179,7 @@ if(${PROJECT_NAME}_ENABLE_DEV)
   add_executable(
     ${PROJECT_NAME}.main
     main.cpp
+    interop/stdexec.cpp
     detail/callable_shape.cpp
     detail/invocability.cpp
     detail/type_names.cpp

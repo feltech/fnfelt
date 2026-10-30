@@ -67,4 +67,5 @@ endfunction()
 ####################################################################################################
 # Compiler error test packages
 
+add_subdirectory(interop)
 add_subdirectory(monad)
