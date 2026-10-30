@@ -52,6 +52,8 @@ endif()
 ####################################################################################################
 # Main project
 
+include(cmake/CPM.cmake)
+
 find_package(immer REQUIRED)
 find_package(libfork REQUIRED)
 
