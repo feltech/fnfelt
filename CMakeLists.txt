@@ -54,6 +54,26 @@ endif()
 
 include(cmake/CPM.cmake)
 
+# TODO(DF): Use Conan once https://github.com/conan-io/conan-center-index/pull/30060 lands.
+cpmaddpackage(
+  NAME
+  stdexec
+  VERSION
+  0.11.0
+  GITHUB_REPOSITORY
+  NVIDIA/stdexec
+  GIT_TAG
+  314637d32d23a3b22ff4b45aa0b17d53a60be0c2
+  EXCLUDE_FROM_ALL
+  NO
+  OPTIONS
+  "STDEXEC_BUILD_TESTS OFF"
+  "STDEXEC_BUILD_EXAMPLES OFF"
+  "STDEXEC_BUILD_DOCS OFF"
+  "STDEXEC_ENABLE_CUDA OFF"
+  "STDEXEC_BUILD_PARALLEL_SCHEDULER OFF"
+  "STDEXEC_INSTALL ON")
+
 find_package(immer REQUIRED)
 find_package(libfork REQUIRED)
 
