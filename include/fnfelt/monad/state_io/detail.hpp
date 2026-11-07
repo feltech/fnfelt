@@ -80,12 +80,11 @@ consteval std::meta::info state_io_action_meta(std::meta::info state_io_meta)
 template <std::meta::info state_io_meta>
 constexpr std::string_view maybe_state_io_name()
 {
-    // Guarded like `is_state_io`'s members: the member splice requires the specialization to be
-    // complete, so diagnostics over pre-validation or declared-only reflections stay well-formed.
-    if constexpr (
-        is_state_io(state_io_meta) && is_complete_type(dealias(remove_cvref(state_io_meta))))
+    if constexpr (is_state_io(state_io_meta))
     {
-        return [:state_io_meta:] ::traits::name;
+        // Read diagnostic traits without completing an invalid action or logical Result.
+        constexpr auto traits_meta = template_arguments_of(dealias(remove_cvref(state_io_meta)))[2];
+        return [:traits_meta:] ::name;
     }
 
     return "<unknown>";

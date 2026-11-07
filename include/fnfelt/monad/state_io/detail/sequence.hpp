@@ -294,7 +294,11 @@ struct SequenceStateIOTraits : CreateStateIOTraits<name_cstr>
         {
             return "element StateIO must have the provided state type";
         }
-        if (is_void_type(detail::state_io_value_meta(computation_meta)))
+        auto const value_meta = detail::state_io_value_meta(computation_meta);
+        if (auto const reason = fnfelt::detail::ResultTypeInfo::from(value_meta).validate();
+            !reason.empty())
+            return reason;
+        if (is_void_type(value_meta))
         {
             return "element StateIO produces no value";
         }

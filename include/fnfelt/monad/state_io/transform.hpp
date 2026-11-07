@@ -33,6 +33,9 @@ namespace fnfelt::monad::state_io
  * IO's value through the transformer. Values that are specialisations of `std::pair` or
  * `std::tuple` are spread into the transformer unless it accepts the value directly. Unlike
  * `and_then`, the transformer's result is not run as an IO.
+ * A Result source maps only success, with a nullary mapper for void, retaining errors, stops
+ * and updated state. A returned Result remains data inside an existing Result layer; a plain
+ * source adopts its first returned Result layer instead.
  *
  * The transformer must be a complete, non-reference, move constructible class or function pointer
  * type accepting the logical value directly or spread and returning a complete, move constructible

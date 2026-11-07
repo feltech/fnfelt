@@ -26,6 +26,10 @@ template <char const * name_cstr = default_state_io_name>
 struct JustStateIOTraits;
 template <char const * name_cstr = default_state_io_name>
 struct AndThenStateIOTraits;
+template <char const * name_cstr = detail::default_state_io_name>
+struct OrElseStateIOTraits;
+template <char const * name_cstr = detail::default_state_io_name>
+struct TransformErrorStateIOTraits;
 template <char const * name_cstr = default_state_io_name>
 struct TransformStateIOTraits;
 template <char const * name_cstr = default_state_io_name>
@@ -68,6 +72,14 @@ template <char const * name_cstr, class TSource, class TNext>
 [[nodiscard]] constexpr auto tap(TSource && source, TNext && next);
 template <class TTraits = detail::AndThenStateIOTraits<>, class TSource, class TContinuation>
 [[nodiscard]] constexpr auto and_then(TSource && source, TContinuation && continuation);
+template <class TTraits = detail::OrElseStateIOTraits<>, class TSource, class TContinuation>
+[[nodiscard]] constexpr auto or_else(TSource && source, TContinuation && continuation);
+template <char const * name_cstr, class TSource, class TContinuation>
+[[nodiscard]] constexpr auto or_else(TSource && source, TContinuation && continuation);
+template <class TTraits = detail::TransformErrorStateIOTraits<>, class TSource, class TTransformer>
+[[nodiscard]] constexpr auto transform_error(TSource && source, TTransformer && transformer);
+template <char const * name_cstr, class TSource, class TTransformer>
+[[nodiscard]] constexpr auto transform_error(TSource && source, TTransformer && transformer);
 template <
     class TTraits = detail::RepeatUntilStateIOTraits<>,
     class TSource,

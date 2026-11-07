@@ -25,6 +25,7 @@
 #include <fnfelt/monad/io/detail/async.hpp>
 #include <fnfelt/monad/state_io/detail.hpp>
 #include <fnfelt/monad/state_io/fwd.hpp>
+#include <fnfelt/result.hpp>
 
 namespace fnfelt::monad::state_io
 {
@@ -103,6 +104,17 @@ consteval std::meta::info action_io_meta(std::meta::info action_meta, std::meta:
  */
 consteval std::meta::info action_value_meta(std::meta::info action_meta, std::meta::info state_meta)
 {
+    auto const declared_pair = dealias(io::detail::declared_continuation_value_meta(action_meta));
+    if (has_template_arguments(declared_pair) && template_of(declared_pair) == ^^std::pair)
+    {
+        auto const logical_meta = template_arguments_of(declared_pair)[0];
+        if (!fnfelt::detail::ResultTypeInfo::from(logical_meta).validate().empty())
+        {
+            // Retain malformed Result metadata for the named operation's validator. Invoking
+            // the enclosing action first could complete its invalid standard-library pair.
+            return logical_meta;
+        }
+    }
     std::meta::info const io_meta = action_io_meta(action_meta, state_meta);
     if (is_void_type(io_meta))
     {
@@ -147,11 +159,6 @@ consteval std::meta::info state_io_io_meta(std::meta::info computation_meta)
  */
 consteval std::meta::info state_io_value_meta(std::meta::info computation_meta)
 {
-    std::meta::info const io_meta = state_io_io_meta(computation_meta);
-    if (is_void_type(io_meta))
-    {
-        return ^^void;
-    }
     return action_value_meta(
         state_io_action_meta(computation_meta), state_io_state_meta(computation_meta));
 }
@@ -297,6 +304,19 @@ struct CreateStateIOTraits
         {
             return "provided state must be move constructible";
         }
+        // A declared function-pointer chain can reveal an invalid logical Result before any
+        // invocability query completes the enclosing pair or IO specialization.
+        auto const declared_value = io::detail::declared_continuation_value_meta(action_meta);
+        if (has_template_arguments(dealias(declared_value)) &&
+            template_of(dealias(declared_value)) == ^^std::pair)
+        {
+            auto const logical_meta = template_arguments_of(dealias(declared_value))[0];
+            if (auto const reason = fnfelt::detail::ResultTypeInfo::from(logical_meta).validate();
+                !reason.empty())
+            {
+                return reason;
+            }
+        }
         // The state is passed by value and moved into the action, so the invocation is modelled
         // with the bare state type.
         if (!is_invocable_type(action_meta, {state_meta}))
@@ -324,6 +344,11 @@ struct CreateStateIOTraits
             return "provided action must return an IO producing std::pair<value, state>";
         }
         auto const members = template_arguments_of(pair_meta);
+        if (auto const reason = fnfelt::detail::ResultTypeInfo::from(members[0]).validate();
+            !reason.empty())
+        {
+            return reason;
+        }
         if (is_reference_type(members[0]) || is_reference_type(members[1]))
         {
             return "produced value and state must not be reference types";

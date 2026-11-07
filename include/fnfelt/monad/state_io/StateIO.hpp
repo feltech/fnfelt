@@ -143,6 +143,68 @@ public:
     }
 
     /**
+     * Recover a reported error using the latest state.
+     *
+     * @tparam TOrElseTraits Validation and result traits.
+     * @tparam TContinuation Recovery callable type.
+     * @param self Source state computation.
+     * @param continuation Error-taking StateIO continuation.
+     * @return Recovered state computation.
+     */
+    template <class TOrElseTraits = detail::OrElseStateIOTraits<>, class TContinuation>
+    [[nodiscard]] constexpr auto or_else(this auto && self, TContinuation continuation)
+    {
+        return state_io::or_else<TOrElseTraits>(FW(self), FW(continuation));
+    }
+
+    /**
+     * Recover a reported error, naming the result.
+     *
+     * @tparam name_cstr Diagnostic name with static storage duration.
+     * @tparam TContinuation Recovery callable type.
+     * @param self Source state computation.
+     * @param continuation Error-taking StateIO continuation.
+     * @return Named recovered state computation.
+     */
+    template <char const * name_cstr, class TContinuation>
+    [[nodiscard]] constexpr auto or_else(this auto && self, TContinuation continuation)
+    {
+        return state_io::or_else<name_cstr>(FW(self), FW(continuation));
+    }
+
+    /**
+     * Map a reported error while preserving success and stop.
+     *
+     * @tparam TTransformErrorTraits Validation and result traits.
+     * @tparam TTransformer Error mapper type.
+     * @param self Source state computation.
+     * @param transformer Pure error mapper.
+     * @return State computation with the mapped error type.
+     */
+    template <
+        class TTransformErrorTraits = detail::TransformErrorStateIOTraits<>,
+        class TTransformer>
+    [[nodiscard]] constexpr auto transform_error(this auto && self, TTransformer transformer)
+    {
+        return state_io::transform_error<TTransformErrorTraits>(FW(self), FW(transformer));
+    }
+
+    /**
+     * Map a reported error, naming the result.
+     *
+     * @tparam name_cstr Diagnostic name with static storage duration.
+     * @tparam TTransformer Error mapper type.
+     * @param self Source state computation.
+     * @param transformer Pure error mapper.
+     * @return Named state computation with the mapped error type.
+     */
+    template <char const * name_cstr, class TTransformer>
+    [[nodiscard]] constexpr auto transform_error(this auto && self, TTransformer transformer)
+    {
+        return state_io::transform_error<name_cstr>(FW(self), FW(transformer));
+    }
+
+    /**
      * Complete an expected result with a conditional fallback computation.
      *
      * @param self Choice computation.

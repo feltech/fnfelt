@@ -28,6 +28,7 @@
 #include <fnfelt/monad/state_io/detail/bind.hpp>
 #include <fnfelt/monad/state_io/detail/create.hpp>
 #include <fnfelt/monad/state_io/fwd.hpp>
+#include <fnfelt/result.hpp>
 
 #include <fnfelt/macros_push.hpp>
 
@@ -66,8 +67,21 @@ struct MapValue
      */
     constexpr auto operator()(this auto && self, auto && result)
     {
-        return std::pair{
-            fnfelt::detail::invoke_dispatch(FW(self).transformer, FW(result).first),
+        constexpr auto source_meta = ^^decltype(result.first);
+        constexpr auto continuation_info =
+            fnfelt::detail::SuccessContinuationInfo::from(^^TTransformer, source_meta);
+        using value_type = [:[] consteval
+                            {
+                                auto info = fnfelt::detail::ResultTypeInfo::from(source_meta);
+                                if (info.is_result)
+                                {
+                                    info.success_payload_meta = continuation_info.result_meta;
+                                    return info.type_meta();
+                                }
+                                return continuation_info.result_meta;
+                            }():];
+        return std::pair<value_type, decltype(result.second)>{
+            fnfelt::detail::map_success_result<value_type>(FW(self).transformer, FW(result).first),
             FW(result).second};
     }
 };
@@ -86,15 +100,19 @@ struct MapValue
  * @tparam transformer_meta Reflection of the (decayed) transformer type.
  * @param name Display name of the resulting StateIO (from traits).
  * @param reason Validation failure reason from `TTraits::validate_transform`.
+ * @param operation Mapping operation shown in the diagnostic.
  * @return Formatted error message string.
  */
 template <std::meta::info source_meta, std::meta::info transformer_meta>
-consteval std::string transform_error_msg(std::string_view name, std::string_view reason)
+consteval std::string transform_error_msg(
+    std::string_view name, std::string_view reason, std::string_view operation = "transform")
 {
     std::string msg;
     msg += "fnfelt: ";
     fnfelt::detail::append_string_view(msg, name);
-    msg += " transform error: ";
+    msg += ' ';
+    fnfelt::detail::append_string_view(msg, operation);
+    msg += " error: ";
     fnfelt::detail::append_string_view(msg, name);
     msg += '{';
     fnfelt::detail::append_string_view(msg, maybe_state_io_name<source_meta>());
@@ -172,8 +190,11 @@ struct TransformStateIOTraits : CreateStateIOTraits<name_cstr>
         {
             return "source is not a StateIO";
         }
-        std::meta::info const inner_io_meta = detail::state_io_io_meta(source_meta);
-        if (is_void_type(inner_io_meta))
+        auto const value_meta = state_io_value_meta(source_meta);
+        auto const source_result_info = fnfelt::detail::ResultTypeInfo::from(value_meta);
+        if (auto const reason = source_result_info.validate(); !reason.empty())
+            return reason;
+        if (is_void_type(value_meta))
         {
             return "source StateIO produces no value";
         }
@@ -190,17 +211,36 @@ struct TransformStateIOTraits : CreateStateIOTraits<name_cstr>
             case fnfelt::detail::CallableShape::valid:
                 break;
         }
-        auto const value_meta = state_io_value_meta(source_meta);
-        if (!fnfelt::detail::is_dispatch_invocable(transformer_meta, value_meta))
+        if (auto const reason = fnfelt::detail::ResultTypeInfo::from(
+                                    io::detail::declared_function_result_meta(transformer_meta))
+                                    .validate();
+            !reason.empty())
+            return reason;
+        auto const continuation_info =
+            fnfelt::detail::SuccessContinuationInfo::from(transformer_meta, value_meta);
+        if (!continuation_info.is_valid)
         {
             return "transformer function does not accept the source StateIO's value";
         }
-        auto const result_meta = fnfelt::detail::dispatch_result_meta(transformer_meta, value_meta);
-        if (is_void_type(result_meta) || is_reference_type(result_meta) ||
-            io::detail::is_io(result_meta) || detail::is_state_io(result_meta))
+        auto const result_meta = continuation_info.result_meta;
+        if (auto const reason = fnfelt::detail::ResultTypeInfo::from(result_meta).validate();
+            !reason.empty())
+            return reason;
+        if ((is_void_type(result_meta) && !source_result_info.is_result) ||
+            is_reference_type(result_meta) || io::detail::is_io(result_meta) ||
+            detail::is_state_io(result_meta))
         {
             return "transformer function must return a plain value by value";
         }
+        if (source_result_info.is_result)
+        {
+            auto mapped_info = source_result_info;
+            mapped_info.success_payload_meta = result_meta;
+            if (auto const reason = mapped_info.validate(); !reason.empty())
+                return reason;
+        }
+        if (is_void_type(result_meta))
+            return {};
         if (!is_complete_type(result_meta) || !is_move_constructible_type(result_meta))
         {
             return "transformer result must be a complete move constructible type";

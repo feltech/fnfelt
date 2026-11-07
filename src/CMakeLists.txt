@@ -114,6 +114,10 @@ target_sources(
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/detail/just.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/detail/bind.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/and_then.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/or_else.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/detail/or_else.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/transform_error.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/detail/transform_error.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/transform.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/select.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/state_io/ap.hpp
@@ -239,6 +243,7 @@ if(${PROJECT_NAME}_ENABLE_DEV)
     monad/state_io/lift.cpp
     monad/state_io/just.cpp
     monad/state_io/and_then.cpp
+    monad/state_io/result.cpp
     monad/state_io/transform.cpp
     monad/state_io/select.cpp
     monad/state_io/ap.cpp

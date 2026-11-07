@@ -21,6 +21,7 @@
 #include <fnfelt/detail/invocability.hpp>
 #include <fnfelt/monad/io/transform.hpp>
 #include <fnfelt/monad/state_io/detail/bind.hpp>
+#include <fnfelt/result.hpp>
 
 #include <fnfelt/macros_push.hpp>
 
@@ -108,9 +109,36 @@ struct StoreValue
      */
     constexpr auto operator()(this auto && self, auto && result)
     {
-        auto state = invoke_store(FW(self).mutator, std::as_const(result.first), FW(result).second);
-        return std::pair<decltype(result.first), decltype(result.second)>{
-            FW(result).first, std::move(state)};
+        using pair_type = std::remove_cvref_t<decltype(result)>;
+        if constexpr (fnfelt::detail::ResultTraits::is_result_type(^^decltype(result.first)))
+        {
+            if (!fnfelt::result::is_success(result.first))
+            {
+                // Failed and stopped values keep the state already produced by the source.
+                return pair_type{FW(result).first, FW(result).second};
+            }
+            if constexpr (is_void_type(
+                              fnfelt::detail::ResultTraits::success_payload_meta(
+                                  ^^decltype(result.first))))
+            {
+                auto state = std::invoke(FW(self).mutator, FW(result).second);
+                return pair_type{FW(result).first, std::move(state)};
+            }
+            else
+            {
+                auto state = invoke_store(
+                    FW(self).mutator,
+                    fnfelt::result::get_success(std::as_const(result.first)),
+                    FW(result).second);
+                return pair_type{FW(result).first, std::move(state)};
+            }
+        }
+        else
+        {
+            auto state =
+                invoke_store(FW(self).mutator, std::as_const(result.first), FW(result).second);
+            return pair_type{FW(result).first, std::move(state)};
+        }
     }
 };
 
@@ -163,19 +191,33 @@ struct StoreStateIOTraits : CreateStateIOTraits<name_cstr>
         {
             return "source must be a StateIO";
         }
+        auto const value_meta = state_io_value_meta(source_meta);
+        auto const source_result_info = fnfelt::detail::ResultTypeInfo::from(value_meta);
+        if (auto const reason = source_result_info.validate(); !reason.empty())
+            return reason;
         if (fnfelt::detail::callable_shape_of(mutator_meta) != fnfelt::detail::CallableShape::valid)
         {
             return "mutator must be a complete movable class or function pointer";
         }
-        auto const value_meta = state_io_value_meta(source_meta);
         auto const state_meta = state_io_state_meta(source_meta);
         if (is_void_type(value_meta))
         {
             return "source StateIO produces no value";
         }
-        auto const const_value = substitute(^^std::add_const_t, {value_meta});
-        auto const arguments =
-            store_argument_metas(mutator_meta, add_lvalue_reference(const_value), state_meta);
+        auto const success_meta = source_result_info.success_payload_meta;
+        std::vector<std::meta::info> arguments;
+        if (source_result_info.is_result && is_void_type(success_meta))
+        {
+            // Successful void supplies only the current state to the mutator.
+            if (is_invocable_type(mutator_meta, {state_meta}))
+                arguments.push_back(state_meta);
+        }
+        else
+        {
+            auto const const_value = substitute(^^std::add_const_t, {success_meta});
+            arguments =
+                store_argument_metas(mutator_meta, add_lvalue_reference(const_value), state_meta);
+        }
         if (arguments.empty())
         {
             return "mutator must accept the const logical value or its spread elements, followed "

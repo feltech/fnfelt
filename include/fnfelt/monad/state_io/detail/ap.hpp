@@ -16,8 +16,9 @@
 
 #include <fnfelt/detail/invocability.hpp>
 #include <fnfelt/monad/io/and_then.hpp>
+#include <fnfelt/monad/io/transform.hpp>
 #include <fnfelt/monad/state_io/detail/bind.hpp>
-#include <fnfelt/monad/state_io/detail/transform.hpp>
+#include <fnfelt/result.hpp>
 
 #include <fnfelt/macros_push.hpp>
 
@@ -42,12 +43,15 @@ struct ApplyFunction
      * Apply the function, spreading only when direct invocation is unavailable.
      *
      * @param self Function holder.
-     * @param value Logical value.
-     * @return Function result.
+     * @param value Logical value and updated state.
+     * @return Function result and updated state.
      */
     constexpr auto operator()(this auto && self, auto && value)
     {
-        return fnfelt::detail::invoke_dispatch(FW(self).fn, FW(value));
+        // Applicative collection treats a complete Result as data, matching io::ap/sequence.
+        using value_type = decltype(fnfelt::detail::invoke_dispatch(FW(self).fn, FW(value).first));
+        return std::pair<value_type, decltype(value.second)>{
+            fnfelt::detail::invoke_dispatch(FW(self).fn, FW(value).first), FW(value).second};
     }
 };
 
@@ -73,7 +77,7 @@ struct ApplyValue
     {
         using function_type = std::remove_reference_t<decltype(result.first)>;
         return bind_state<TState>(FW(self).source, FW(result).second)
-            .transform(MapValue<ApplyFunction<function_type>>{{FW(result).first}});
+            .transform(ApplyFunction<function_type>{FW(result).first});
     }
 };
 
@@ -132,13 +136,30 @@ struct ApStateIOTraits : CreateStateIOTraits<name_cstr>
             return "function and value sources must have the same state type";
         }
         auto const fn_meta = state_io_value_meta(function_meta);
+        if (auto const reason = fnfelt::detail::ResultTypeInfo::from(fn_meta).validate();
+            !reason.empty())
+        {
+            return reason;
+        }
+        // Reject the first source before reflecting a potentially poisoned second action.
         auto const arg_meta = state_io_value_meta(value_meta);
+        if (auto const reason = fnfelt::detail::ResultTypeInfo::from(arg_meta).validate();
+            !reason.empty())
+            return reason;
+        if (auto const reason = fnfelt::detail::ResultTypeInfo::from(
+                                    io::detail::declared_function_result_meta(fn_meta))
+                                    .validate();
+            !reason.empty())
+            return reason;
         if (is_void_type(fn_meta) || is_void_type(arg_meta) ||
             !fnfelt::detail::is_dispatch_invocable(fn_meta, arg_meta))
         {
             return "produced function does not accept the value source's logical value";
         }
         auto const result_meta = fnfelt::detail::dispatch_result_meta(fn_meta, arg_meta);
+        if (auto const reason = fnfelt::detail::ResultTypeInfo::from(result_meta).validate();
+            !reason.empty())
+            return reason;
         if (is_void_type(result_meta) || is_reference_type(result_meta) ||
             io::detail::is_io(result_meta) || is_state_io(result_meta))
         {

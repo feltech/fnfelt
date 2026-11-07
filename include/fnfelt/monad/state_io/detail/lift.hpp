@@ -13,22 +13,26 @@
 
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
+#include <libfork/core/task.hpp>
+
 #include <fnfelt/detail/type_names.hpp>
+#include <fnfelt/monad/io/create.hpp>
 #include <fnfelt/monad/io/detail.hpp>
 // The definitions backing `fnfelt::monad::io::detail::io_value_meta` (which calls `action_is_async`
 // from) live in async.hpp; including only io's detail.hpp would hard-error with "action_is_async
 // used before its definition".
 #include <fnfelt/monad/io/detail/async.hpp>
-#include <fnfelt/monad/io/transform.hpp>
 #include <fnfelt/monad/reader_io/ReaderIO.hpp>
 #include <fnfelt/monad/reader_io/detail/bind.hpp>
 #include <fnfelt/monad/reader_io/detail/create.hpp>
 #include <fnfelt/monad/state_io/detail.hpp>
 #include <fnfelt/monad/state_io/detail/create.hpp>
 #include <fnfelt/monad/state_io/fwd.hpp>
+#include <fnfelt/result.hpp>
 
 #include <fnfelt/macros_push.hpp>
 
@@ -48,32 +52,94 @@ struct LiftError
 };
 
 /**
- * Reattach owned state to a logical value.
+ * Preserve an entire asynchronous IO result alongside owned state.
  *
- * @tparam TState State type.
+ * @tparam TState Owned state type.
+ * @tparam TIO Embedded IO type.
  */
-template <class TState>
-struct AttachState
+template <class TState, class TIO>
+struct AttachStateProxy : io::detail::TransportProxyTag
 {
-    /// State preserved while the source runs.
+    /// Whole IO value, including its Result layer, and retained state.
+    using value_type = std::pair<typename TIO::value_type, TState>;
+    /// Embedded source and retained state.
+    std::tuple<TIO, TState> arg;
+
+    /**
+     * Await the source before attaching state to any of its outcomes.
+     *
+     * @par Callable parameters
+     * The first argument is supplied by libfork. `source` is the owned IO and `state` is retained.
+     */
+    static constexpr auto fn =
+        [](auto, TIO source, TState state) -> lf::task<io::detail::task_result_t<value_type>>
+    {
+        auto value = io::detail::unpack_result(co_await io::detail::just_child(std::move(source)));
+        co_return io::detail::pack_result<value_type>(
+            value_type{std::move(value), std::move(state)});
+    };
+
+    /**
+     * Attach state after constant-evaluated execution, preserving the complete source value.
+     *
+     * @par Callable parameters
+     * `source`: Embedded IO. `state`: State retained during execution.
+     */
+    static constexpr auto run_inline = [](TIO source, TState state) -> value_type
+    { return {std::move(source).build().sync_wait(), std::move(state)}; };
+
+    /**
+     * Retain the source and state for deferred execution.
+     *
+     * @param stored Owned source and state.
+     */
+    constexpr explicit AttachStateProxy(decltype(arg) stored) : arg{std::move(stored)} {}
+};
+
+/**
+ * Attach state without interpreting a source Result as IO control flow.
+ *
+ * @tparam TState Owned state type.
+ * @tparam TIO Embedded IO type.
+ */
+template <class TState, class TIO>
+struct AttachStateAction
+{
+    /// Whether the embedded source requires asynchronous transport.
+    static constexpr bool is_async = io::detail::action_is_async(io::detail::io_action_meta(^^TIO));
+    /// Whole source value and state, or their asynchronous driver.
+    using result_type = std::conditional_t<
+        is_async,
+        AttachStateProxy<TState, TIO>,
+        std::pair<typename TIO::value_type, TState>>;
+    /// Embedded IO.
+    TIO source;
+    /// State retained even on error or stop.
     TState state;
 
     /**
-     * Pair a whole logical value with the preserved state.
+     * Run inline or transfer ownership to the asynchronous driver.
      *
-     * @param self State holder.
-     * @param value Logical source value.
-     * @return Value and unchanged state.
+     * @param self Stored source and state.
+     * @return Whole source value and retained state, or its driver.
      */
-    constexpr auto operator()(this auto && self, auto && value)
+    constexpr auto operator()(this auto && self) -> result_type
     {
-        return std::pair{FW(value), FW(self).state};
+        if constexpr (is_async)
+        {
+            return result_type{{FW(self).source, FW(self).state}};
+        }
+        else
+        {
+            return {FW(self).source.build().sync_wait(), FW(self).state};
+        }
     }
 };
 
-/// Preserve the stored state's qualification during class template argument deduction.
-template <class TState>
-AttachState(TState &&) -> AttachState<std::remove_reference_t<TState>>;
+/// Preserve exact stored state qualification while owning the embedded IO.
+template <class TIO, class TState>
+AttachStateAction(TIO &&, TState &&)
+    -> AttachStateAction<std::remove_reference_t<TState>, std::remove_cvref_t<TIO>>;
 
 /**
  * Embed an owned IO or ReaderIO while preserving the original state.
@@ -102,12 +168,12 @@ struct LiftAction
     {
         if constexpr (reader_io::detail::is_reader_io(^^TIO))
         {
-            return reader_io::detail::bind_reader<TState>(FW(self).io, state)
-                .transform(AttachState{std::move(state)});
+            auto source = reader_io::detail::bind_reader<TState>(FW(self).io, state);
+            return io::create(AttachStateAction{std::move(source), std::move(state)});
         }
         else
         {
-            return FW(self).io.transform(AttachState{std::move(state)});
+            return io::create(AttachStateAction{FW(self).io, std::move(state)});
         }
     }
 };
@@ -182,7 +248,13 @@ struct LiftStateIOTraits : CreateStateIOTraits<name_cstr>
             {
                 return "lifting a ReaderIO requires copy constructible state";
             }
-            if (is_void_type(reader_io::detail::reader_io_value_meta(source_meta)))
+            auto const value_meta = reader_io::detail::reader_io_value_meta(source_meta);
+            if (auto const reason = fnfelt::detail::ResultTypeInfo::from(value_meta).validate();
+                !reason.empty())
+            {
+                return reason;
+            }
+            if (is_void_type(value_meta))
             {
                 return "provided source ReaderIO produces no value";
             }
@@ -196,7 +268,13 @@ struct LiftStateIOTraits : CreateStateIOTraits<name_cstr>
         {
             return "provided source is not an IO";
         }
-        if (is_void_type(io::detail::io_value_meta(source_meta)))
+        auto const value_meta = io::detail::io_value_meta(source_meta);
+        if (auto const reason = fnfelt::detail::ResultTypeInfo::from(value_meta).validate();
+            !reason.empty())
+        {
+            return reason;
+        }
+        if (is_void_type(value_meta))
         {
             return "provided source IO produces no value";
         }

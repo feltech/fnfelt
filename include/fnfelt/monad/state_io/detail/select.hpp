@@ -219,8 +219,19 @@ struct SelectStateIOTraits : CreateStateIOTraits<name_cstr>
             return "choice and fallback sources must have the same state type";
         }
         auto const choice_value_meta = state_io_value_meta(choice_meta);
-        auto const reason = io::detail::validate_select_values(
-            choice_value_meta, state_io_value_meta(fallback_meta));
+        if (auto const reason = fnfelt::detail::ResultTypeInfo::from(choice_value_meta).validate();
+            !reason.empty())
+        {
+            return reason;
+        }
+        // A malformed choice must not instantiate the unused fallback's action signature.
+        auto const fallback_value_meta = state_io_value_meta(fallback_meta);
+        if (auto const reason =
+                fnfelt::detail::ResultTypeInfo::from(fallback_value_meta).validate();
+            !reason.empty())
+            return reason;
+        auto const reason =
+            io::detail::validate_select_values(choice_value_meta, fallback_value_meta);
         if (!reason.empty())
         {
             return reason;

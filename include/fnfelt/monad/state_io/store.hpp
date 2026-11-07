@@ -27,7 +27,12 @@ namespace fnfelt::monad::state_io
  * it returns replacement state of the same type. Pair and tuple elements are spread when direct
  * invocation is unavailable, with owned state last. Logical values and
  * state may be move-only. The mutator runs only after successful source execution.
+ * A Result supplies its const successful payload, or only state for successful void. Errors
+ * and stops retain their current state and do not invoke the mutator.
  *
+ * @tparam TTraits Validation and result traits.
+ * @tparam TSource Source StateIO expression type.
+ * @tparam TMutator State replacement callable expression type.
  * @param source Source computation.
  * @param mutator State replacement function.
  * @return StateIO producing the preserved value and replacement state.

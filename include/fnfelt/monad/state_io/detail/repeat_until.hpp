@@ -249,11 +249,14 @@ struct RepeatUntilStateIOTraits : CreateStateIOTraits<name_cstr>
         {
             return "source is not a StateIO";
         }
+        auto const logical_meta = state_io_value_meta(source_meta);
+        if (auto const reason = fnfelt::detail::ResultTypeInfo::from(logical_meta).validate();
+            !reason.empty())
+            return reason;
         if (!is_copy_constructible_type(source_meta))
         {
             return "source StateIO must be copy constructible";
         }
-        auto const logical_meta = state_io_value_meta(source_meta);
         auto const logical_action = substitute(^^LogicalValueAction, {logical_meta});
         auto const logical_io =
             substitute(^^io::IO, {logical_action, ^^io::detail::CreateIOTraits<>});

@@ -33,6 +33,9 @@ namespace fnfelt::monad::state_io
  * invokes the continuation's StateIO with the updated state. Values that are specialisations of
  * `std::pair` or `std::tuple` are spread into the continuation unless it accepts the value
  * directly.
+ * A Result source passes only its successful payload, with no argument for void. Errors and
+ * stops bypass the continuation and retain the source's updated state. Plain chains adopt the
+ * first returned Result; conflicting error domains require transform_error before composition.
  *
  * The continuation must be a complete, non-reference, move constructible class or function
  * pointer type, callable as an rvalue with the source's produced value, and must return a StateIO
