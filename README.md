@@ -103,6 +103,64 @@ Run from the repository root. The pipeline stays lazy until `sync_wait`: `sequen
 file-reading actions on a pool of two workers, then `store` adds their results to the state. The box
 provides immutable access to both configuration and statistics.
 
+## Errors and stopping in IO
+
+An `IO` chain can opt into error and stop handling by returning `fnfelt::Result<T, E>`, an alias for
+`std::optional<std::expected<T, fnfelt::Error<E>>>`. An empty result means stopped; otherwise it
+contains a successful `T` or an error whose `.value` holds `E`.
+
+This example starts with an IO that yields an `int` and introduces a `Result` in its first
+continuation. The value `-1` requests a stop, while other negative values report an error:
+
+```cpp
+#include <cassert>
+#include <utility>
+
+#include <fnfelt/monad/io.hpp>
+#include <fnfelt/result.hpp>
+
+namespace io = fnfelt::monad::io;
+namespace result = fnfelt::result;
+
+enum class ReadError { invalid_count };
+using count_result = fnfelt::Result<int, ReadError>;
+static_assert(result::is_result<count_result>());
+static_assert(!result::is_result<int>());
+
+auto doubled_count(int input)
+{
+    return io::just(input)
+        .and_then([](int count) {
+            return io::create([count]() -> count_result {
+                if (count == -1) return result::stopped();
+                if (count < 0)
+                    return result::error(ReadError::invalid_count);
+                return result::success<count_result>(count);
+            });
+        })
+        // Only successful counts reach this effect.
+        .and_then([](int count) { return io::just(count * 2); })
+        // Recovery receives the error payload; stopped results bypass it.
+        .or_else([](ReadError) { return io::just(0); });
+}
+
+int main()
+{
+    auto success = doubled_count(21).build().sync_wait();
+    auto recovered = doubled_count(-2).build().sync_wait();
+    auto stopped = doubled_count(-1).build().sync_wait();
+
+    if constexpr (result::is_result(success)) {
+        assert(result::is_success(success) && result::get_success(success) == 42);
+    }
+    assert(result::is_success(recovered) && result::get_success(recovered) == 0);
+    assert(result::is_stopped(stopped));
+
+    auto count = result::maybe_get_success(std::move(success));
+    assert(count.value() == 42);
+}
+```
+
 ## stdexec interoperability
 
 `await_sender` bridges [stdexec](https://github.com/NVIDIA/stdexec) (`std::execution` whilst we are
@@ -136,12 +194,12 @@ arguments or a ReaderIO environment, and must outlive the operations using them.
 `sender_outcome_t` derives its types from the sender's completion signatures:
 
 ```cpp
-std::optional<std::expected<Value, std::expected<Error, std::exception_ptr>>>
+fnfelt::Result<Value, std::expected<Error, std::exception_ptr>>
 ```
 
-An empty optional means stopped. Otherwise, the outer expected holds either a successful `Value` or
-an inner expected: its value holds a sender-provided `Error`, while its error holds an exception
-from storing the completion result.
+An empty result means stopped. Otherwise, it contains a successful `Value` or a `fnfelt::Error`
+wrapper. For an error result, `outcome->error().value` holds an inner expected: its value is a
+sender-provided `Error`, while its error is an exception from storing the completion result.
 
 Success arguments are stored as owned, decayed values. Their shape depends on the signatures:
 
@@ -155,7 +213,7 @@ Success arguments are stored as owned, decayed values. Their shape depends on th
 Error signatures similarly give a direct `Error` type or a variant of alternatives. Duplicate types
 after decay are merged; a channel with no signatures uses an unreachable `std::monostate`
 placeholder. For example, `stdexec::just(42)` gives
-`std::optional<std::expected<int, std::expected<std::monostate, std::exception_ptr>>>`.
+`fnfelt::Result<int, std::expected<std::monostate, std::exception_ptr>>`.
 
 ## Compile-time validation
 
@@ -213,7 +271,8 @@ Here `unsigned long` is the compiler's underlying type for `std::string::size_ty
 
 - [libfork](https://conorwilliams.github.io/libfork/) for fork-join coroutine concurrency.
 - [immer](https://sinusoid.es/immer/) for immutable containers.
-- [stdexec](https://nvidia.github.io/stdexec/) for interoperability with other concurrent IO libraries.
+- [stdexec](https://nvidia.github.io/stdexec/) for interoperability with other concurrent IO
+  libraries.
 
 ## Building
 
