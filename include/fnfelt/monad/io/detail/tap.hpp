@@ -45,6 +45,17 @@ struct NextContinuation
     {
         return FW(self).next;
     }
+
+    /**
+     * Continue after successful void without inventing a payload value.
+     *
+     * @param self Stored continuation.
+     * @return Next IO.
+     */
+    constexpr auto operator()(this auto && self)
+    {
+        return FW(self).next;
+    }
 };
 
 /**

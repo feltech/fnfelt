@@ -25,6 +25,7 @@
 #include <fnfelt/monad/io/detail/async.hpp>
 #include <fnfelt/monad/io/detail/create.hpp>
 #include <fnfelt/monad/io/fwd.hpp>
+#include <fnfelt/result.hpp>
 
 #include <fnfelt/macros_push.hpp>
 
@@ -61,24 +62,52 @@ struct AndThenError
 template <class TSourceIO, class TContinuation>
 consteval std::meta::info and_then_continuation_io_meta()
 {
-    return fnfelt::detail::dispatch_result_meta(^^TContinuation, io_value_meta(^^TSourceIO));
+    return fnfelt::detail::SuccessContinuationInfo::from(
+               ^^TContinuation, io_value_meta(^^TSourceIO))
+        .result_meta;
 }
 
 /**
- * Reflection of the value an and_then action produces when run.
+ * Result type information for an and_then composition.
  *
- * The invocation result is the continuation's IO, whose own value (async-transparent) is the final
- * value.
+ * Combines preserved source errors with the continuation IO's result type.
  *
  * @tparam TSourceIO Source IO to run.
  * @tparam TContinuation Continuation taking the source's value and returning an IO.
- * @return Reflection of the value the action produces.
+ * @return Combined source and continuation result type information.
  */
 template <class TSourceIO, class TContinuation>
-consteval std::meta::info and_then_value_type_meta()
+consteval fnfelt::detail::ResultTypeInfo and_then_result_type_info()
 {
-    return io_value_meta(and_then_continuation_io_meta<TSourceIO, TContinuation>());
+    constexpr auto source_meta = io_value_meta(^^TSourceIO);
+    constexpr auto continuation_info =
+        fnfelt::detail::SuccessContinuationInfo::from(^^TContinuation, source_meta);
+    constexpr auto result_meta = io_value_meta(continuation_info.result_meta);
+    return fnfelt::detail::ResultTypeInfo::from(source_meta, continuation_info.is_result)
+        .merge(fnfelt::detail::ResultTypeInfo::from(result_meta));
 }
+
+/**
+ * Source interpretation and result lifting shared by all bind execution paths.
+ *
+ * @tparam TSourceIO Source IO.
+ * @tparam TContinuation Continuation type.
+ */
+template <class TSourceIO, class TContinuation>
+struct AndThenContinuationInfo
+{
+    /// Payload invocation selected by the Result shape.
+    static constexpr auto continuation_info =
+        fnfelt::detail::SuccessContinuationInfo::from(^^TContinuation, io_value_meta(^^TSourceIO));
+    /// Source payload and error domain.
+    static constexpr auto source_result_info =
+        fnfelt::detail::ResultTypeInfo::from(io_value_meta(^^TSourceIO));
+    /// Final plain value or promoted Result.
+    using value_type = [:and_then_result_type_info<TSourceIO, TContinuation>().type_meta():];
+    /// Whether the continuation already returns the joined Result type.
+    static constexpr bool is_identity_result =
+        is_same_type(^^value_type, io_value_meta(continuation_info.result_meta));
+};
 
 /**
  * Whether an and_then composition must run asynchronously.
@@ -125,7 +154,46 @@ consteval std::meta::info and_then_result_type_meta()
     {
         return ^^AndThenProxy<TSourceIO, TContinuation>;
     }
-    return and_then_value_type_meta<TSourceIO, TContinuation>();
+    return and_then_result_type_info<TSourceIO, TContinuation>().type_meta();
+}
+
+/**
+ * Run a source and its successful continuation inline.
+ *
+ * @tparam TContinuationInfo Source interpretation and result adaptation policy.
+ * @tparam TSourceIO Source IO argument type.
+ * @tparam TContinuation Continuation argument type.
+ * @param source Source IO.
+ * @param continuation Continuation applied to successful payload data.
+ * @return Final value or propagated source outcome.
+ */
+template <class TContinuationInfo, class TSourceIO, class TContinuation>
+constexpr typename TContinuationInfo::value_type run_and_then_inline(
+    TSourceIO && source, TContinuation && continuation)
+{
+    using result_type = typename TContinuationInfo::value_type;
+    auto input = FW(source).build().sync_wait();
+    if constexpr (TContinuationInfo::source_result_info.is_result)
+    {
+        if (auto maybe_stop_or_error = fnfelt::detail::
+                maybe_stop_or_error<TContinuationInfo::continuation_info.is_result, result_type>(
+                    std::move(input)))
+        {
+            return *std::move(maybe_stop_or_error);
+        }
+    }
+    // Preserve the continuation's receiver category so dispatch matches validation and inference.
+    auto next =
+        fnfelt::detail::invoke_success_continuation<TContinuationInfo::continuation_info.is_result>(
+            FW(continuation), std::move(input));
+    if constexpr (TContinuationInfo::is_identity_result)
+    {
+        return std::move(next).build().sync_wait();
+    }
+    else
+    {
+        return fnfelt::detail::convert_result<result_type>(std::move(next).build().sync_wait());
+    }
 }
 
 /**
@@ -150,7 +218,7 @@ struct AndThenAction
     using result_type = [:and_then_result_type_meta<TSourceIO, TContinuation>():];
     /// Source IO to run.
     TSourceIO source;
-    /// Continuation applied to the source's value.
+    /// Continuation applied to successful payload data.
     TContinuation continuation;
 
     /**
@@ -169,11 +237,8 @@ struct AndThenAction
         }
         else
         {
-            auto input = FW(self).source.build().sync_wait();
-            // The stored continuation is moved into the call so the receiver matches validation
-            // and inference; the direct-vs-spread dispatch is `invoke_dispatch`'s.
-            auto next = fnfelt::detail::invoke_dispatch(FW(self).continuation, std::move(input));
-            return std::move(next).build().sync_wait();
+            using continuation_info = AndThenContinuationInfo<TSourceIO, TContinuation>;
+            return run_and_then_inline<continuation_info>(FW(self).source, FW(self).continuation);
         }
         // Not reachable: validation guarantees one of the dispatches above is taken.
         std::unreachable();
@@ -201,16 +266,25 @@ constexpr std::string_view maybe_continuation_result_io_name()
         is_io(source_io_meta) && is_type(continuation_meta) &&
         is_complete_type(remove_cvref(continuation_meta)))
     {
-        constexpr std::meta::info continuation_arg_meta = io_value_meta(source_io_meta);
-
-        if constexpr (fnfelt::detail::is_dispatch_invocable(
-                          continuation_meta, continuation_arg_meta))
+        // Rejected source payloads must not instantiate a generic continuation to format an error.
+        if constexpr (!fnfelt::detail::ResultTypeInfo::from(io_value_meta(source_io_meta))
+                           .validate()
+                           .empty())
         {
-            // A continuation may return an IO reference; a reference cannot be spliced, and the
-            // assertion message is instantiated even when validation passes.
-            constexpr std::meta::info named_meta = remove_cvref(
-                fnfelt::detail::dispatch_result_meta(continuation_meta, continuation_arg_meta));
-            return maybe_io_name<named_meta>();
+            return "<unknown>";
+        }
+        else
+        {
+            constexpr auto continuation_info = fnfelt::detail::SuccessContinuationInfo::from(
+                continuation_meta, io_value_meta(source_io_meta));
+
+            if constexpr (continuation_info.is_valid)
+            {
+                // A continuation may return an IO reference; a reference cannot be spliced, and
+                // the assertion message is instantiated even when validation passes.
+                constexpr std::meta::info named_meta = remove_cvref(continuation_info.result_meta);
+                return maybe_io_name<named_meta>();
+            }
         }
     }
 
@@ -222,9 +296,9 @@ constexpr std::string_view maybe_continuation_result_io_name()
  *
  * Uses reflection to extract type names and diagnostics about the source IO and continuation when
  * and_then validation fails. The message includes the IO name, the source IO type, the
- * continuation's result type (if determinable), the specific validation failure reason, and the
- * offending argument's display string (the source type if the source is not an IO, otherwise the
- * continuation type).
+ * continuation's result type (if determinable), the specific validation failure reason, and
+ * the offending argument's display string (the source type if the source is not an IO, otherwise
+ * the continuation type).
  *
  * This function is called only within a static_assert to provide friendly diagnostics; it must
  * never be evaluated at runtime.
@@ -272,28 +346,61 @@ template <class TSourceIO, class TContinuation>
 struct AndThenProxy : detail::TransportProxyTag
 {
     /// Value the composed IO produces.
-    using value_type = [:detail::and_then_value_type_meta<TSourceIO, TContinuation>():];
+    using value_type = [:detail::and_then_result_type_info<TSourceIO, TContinuation>()
+                             .type_meta():];
     /// Source IO and continuation spread into @ref fn.
     std::tuple<TSourceIO, TContinuation> arg;
-    /// Async/mixed composition driver.
+    /**
+     * Async/mixed composition driver.
+     *
+     * @par Callable parameters
+     * The unnamed first argument is supplied by libfork and is unused.
+     * `source`: Source IO to run. `continuation`: Successful-payload continuation.
+     */
     static constexpr auto fn = [](auto, TSourceIO source, TContinuation continuation)
         -> lf::task<detail::task_result_t<value_type>>
     {
+        using continuation_info = detail::AndThenContinuationInfo<TSourceIO, TContinuation>;
         auto input = detail::unpack_result(co_await detail::just_child(std::move(source)));
+        if constexpr (continuation_info::source_result_info.is_result)
+        {
+            if (auto maybe_stop_or_error = fnfelt::detail::
+                    maybe_stop_or_error<continuation_info::continuation_info.is_result, value_type>(
+                        std::move(input)))
+            {
+                co_return detail::pack_result<value_type>(*std::move(maybe_stop_or_error));
+            }
+        }
         // The stored continuation is moved into the call so the receiver matches validation and
         // inference; the direct-vs-spread dispatch is `invoke_dispatch`'s, mirroring the
         // synchronous action.
-        auto next = fnfelt::detail::invoke_dispatch(std::move(continuation), std::move(input));
-        co_return co_await detail::just_child(std::move(next));
+        auto next = fnfelt::detail::invoke_success_continuation<
+            continuation_info::continuation_info.is_result>(
+            std::move(continuation), std::move(input));
+        if constexpr (continuation_info::is_identity_result)
+        {
+            co_return co_await detail::just_child(std::move(next));
+        }
+        else
+        {
+            auto output = detail::unpack_result(co_await detail::just_child(std::move(next)));
+            co_return detail::pack_result<value_type>(
+                fnfelt::detail::convert_result<value_type>(std::move(output)));
+        }
     };
 
-    /// Run dependent effects inline during constant evaluation.
+    /**
+     * Run dependent effects inline during constant evaluation.
+     *
+     * @par Callable parameters
+     * `source`: Source IO to run. `continuation`: Successful-payload continuation.
+     */
     static constexpr auto run_inline = [](TSourceIO source,
                                           TContinuation continuation) -> value_type
     {
-        auto input = std::move(source).build().sync_wait();
-        auto next = fnfelt::detail::invoke_dispatch(std::move(continuation), std::move(input));
-        return std::move(next).build().sync_wait();
+        using continuation_info = detail::AndThenContinuationInfo<TSourceIO, TContinuation>;
+        return detail::run_and_then_inline<continuation_info>(
+            std::move(source), std::move(continuation));
     };
 
     /**
@@ -326,8 +433,8 @@ struct AndThenIOTraits : CreateIOTraits<name_cstr>
      *
      * Checks, in order: the source is an IO producing a value (not void); the continuation function
      * is a complete, non-reference, move constructible class or function pointer type; it accepts
-     * the source IO's value either directly or spread from its template arguments; and its result
-     * is an IO that produces a value.
+     * the ordinary source value or explicit Result payload either directly or spread; and its
+     * result is an IO that produces a value.
      *
      * @param io_meta Reflection of the source IO type.
      * @param continuation_meta Reflection of the continuation function type.
@@ -341,6 +448,11 @@ struct AndThenIOTraits : CreateIOTraits<name_cstr>
             return "source IO is not an IO";
         }
         auto const value_meta = detail::io_value_meta(io_meta);
+        if (auto const reason = fnfelt::detail::ResultTypeInfo::from(value_meta).validate();
+            !reason.empty())
+        {
+            return reason;
+        }
         if (is_void_type(value_meta))
         {
             return "source IO produces no value";
@@ -359,12 +471,13 @@ struct AndThenIOTraits : CreateIOTraits<name_cstr>
                 break;
         }
         continuation_meta = dealias(remove_cvref(continuation_meta));
-        if (!fnfelt::detail::is_dispatch_invocable(continuation_meta, value_meta))
+        auto const continuation_info =
+            fnfelt::detail::SuccessContinuationInfo::from(continuation_meta, value_meta);
+        if (!continuation_info.is_valid)
         {
             return "continuation function does not accept the source IO's value";
         }
-        std::meta::info const result_meta =
-            fnfelt::detail::dispatch_result_meta(continuation_meta, value_meta);
+        std::meta::info const result_meta = continuation_info.result_meta;
         if (!detail::is_io(result_meta))
         {
             return "continuation function must return an IO";
@@ -373,7 +486,15 @@ struct AndThenIOTraits : CreateIOTraits<name_cstr>
         {
             return "continuation function must return an IO that produces a value";
         }
-        return {};
+        if (auto const reason =
+                fnfelt::detail::ResultTypeInfo::from(detail::io_value_meta(result_meta)).validate();
+            !reason.empty())
+        {
+            return reason;
+        }
+        return fnfelt::detail::ResultTypeInfo::from(value_meta, continuation_info.is_result)
+            .merge(fnfelt::detail::ResultTypeInfo::from(detail::io_value_meta(result_meta)))
+            .validate();
     }
 };
 }  // namespace detail

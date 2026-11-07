@@ -81,6 +81,14 @@ struct FanoutIOTraits : SequenceIOTraits<name_cstr>
         std::vector<std::meta::info> results;
         for (auto const fn_meta : template_arguments_of(dealias(functions_meta)))
         {
+            // A declared wrapper may be invalid before invocation can safely be queried.
+            if (auto const reason =
+                    fnfelt::detail::ResultTypeInfo::from(declared_continuation_value_meta(fn_meta))
+                        .validate();
+                !reason.empty())
+            {
+                return reason;
+            }
             if (fnfelt::detail::callable_shape_of(fn_meta) !=
                     fnfelt::detail::CallableShape::valid ||
                 !fnfelt::detail::is_dispatch_invocable(fn_meta, value_meta))
@@ -88,6 +96,16 @@ struct FanoutIOTraits : SequenceIOTraits<name_cstr>
                 return "continuation must accept the shared input as an lvalue";
             }
             auto const result_meta = fnfelt::detail::dispatch_result_meta(fn_meta, value_meta);
+            // Reject this branch before examining any later continuation or building the tuple.
+            if (is_io(result_meta))
+            {
+                if (auto const reason =
+                        fnfelt::detail::ResultTypeInfo::from(io_value_meta(result_meta)).validate();
+                    !reason.empty())
+                {
+                    return reason;
+                }
+            }
             results.push_back(result_meta);
         }
         return SequenceIOTraits<name_cstr>::validate_sequence(substitute(^^std::tuple, results));
@@ -116,7 +134,10 @@ struct FanoutContinuation
     constexpr auto operator()(this auto && self, TValue && value)
     {
         constexpr auto reason = TTraits::validate_fanout(^^TFunctions, ^^decltype((value)));
-        static_assert(reason.empty(), sequence_error_msg<^^TFunctions>(TTraits::name, reason));
+        static_assert(
+            reason.empty(),
+            continuations_error_msg<^^TFunctions, ^^decltype((value)), true>(
+                "fanout", TTraits::name, reason));
         if constexpr (reason.empty())
         {
             auto functions = FW(self).functions;

@@ -40,6 +40,12 @@ namespace fnfelt::monad::io
  * `std::pair` or `std::tuple` are spread into the transformer unless it accepts the value
  * directly. Unlike `and_then`, the transformer's result is not run as an IO.
  *
+ * A Result source maps only its successful payload; error and stop bypass the mapper. Mapping
+ * preserves that Result layer. A mapper-returned Result is payload data
+ * inside the preserved layer; use and_then to adopt another computation's outcomes instead.
+ * Standard optional and expected payloads remain ordinary data. Result<void, E> invokes
+ * a nullary mapper; a void mapper is supported when the source already produces a Result.
+ *
  * The transformer must be a complete, non-reference, move constructible class or function pointer
  * type, callable as an rvalue with the source's value (directly or spread), and must return a
  * valid plain value (not void, not a reference, not an IO, move constructible). An invalid pair

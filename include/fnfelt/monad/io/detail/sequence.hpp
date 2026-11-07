@@ -28,10 +28,13 @@
 #include <libfork/core/eventually.hpp>
 #include <libfork/core/task.hpp>
 
+#include <fnfelt/detail/callable_shape.hpp>
+#include <fnfelt/detail/invocability.hpp>
 #include <fnfelt/monad/io/create.hpp>
 #include <fnfelt/monad/io/detail.hpp>
 #include <fnfelt/monad/io/detail/async.hpp>
 #include <fnfelt/monad/io/detail/create.hpp>
+#include <fnfelt/result.hpp>
 
 #include <fnfelt/macros_push.hpp>
 
@@ -261,8 +264,9 @@ struct ArraySequenceAction
  *
  * The message includes the sequence name, the element list `(<io>, <io>, ...)` with `<unknown>` for
  * elements that are not IOs, the validation reason, and the offending element's display string (the
- * first element that is a reference or not an IO, otherwise the first element, otherwise the input
- * itself). Unsupported inputs use `<unknown>` instead of an element list.
+ * first element that is a reference, not an IO, produces no value or produces an invalid Result,
+ * otherwise the first element, otherwise the input itself). Unsupported inputs use `<unknown>`
+ * instead of an element list.
  * Qualifiers are stripped before a reflection is named or spliced: a qualified reflection
  * has no identifier, and a reference cannot be spliced into a type, so naming one is a hard error.
  *
@@ -304,7 +308,24 @@ consteval std::string sequence_error_msg(std::string_view io_name, std::string_v
     {
         msg += "(";
         std::size_t index = 0;
-        bool is_offending_set = false;
+        // Keep the rejection scan as an ordinary constant-evaluated loop: expanding a template
+        // loop would instantiate each child's action even after an earlier child was rejected.
+        auto const elements = template_arguments_of(target_meta);
+        if (!elements.empty())
+        {
+            offending = remove_cvref(elements[0]);
+        }
+        for (auto const element_meta : elements)
+        {
+            auto const named_meta = remove_cvref(element_meta);
+            if (is_reference_type(element_meta) || !is_io(named_meta) ||
+                is_void_type(io_value_meta(named_meta)) ||
+                !fnfelt::detail::ResultTypeInfo::from(io_value_meta(named_meta)).validate().empty())
+            {
+                offending = named_meta;
+                break;
+            }
+        }
         template for (constexpr auto element_meta :
                       std::define_static_array(template_arguments_of(target_meta)))
         {
@@ -314,17 +335,6 @@ consteval std::string sequence_error_msg(std::string_view io_name, std::string_v
             }
             constexpr std::meta::info named_meta = remove_cvref(element_meta);
             fnfelt::detail::append_string_view(msg, maybe_io_name<named_meta>());
-            if (index == 0)
-            {
-                offending = named_meta;
-            }
-            if (!is_offending_set &&
-                (is_reference_type(element_meta) || !is_io(named_meta) ||
-                 (is_io(named_meta) && is_void_type(io_value_meta(named_meta)))))
-            {
-                offending = named_meta;
-                is_offending_set = true;
-            }
             ++index;
         }
         msg += ")";
@@ -337,6 +347,107 @@ consteval std::string sequence_error_msg(std::string_view io_name, std::string_v
     fnfelt::detail::append_string_view(msg, reason);
     msg += ": ";
     fnfelt::detail::append_string_view(msg, display_string_of(offending));
+    return msg;
+}
+
+/**
+ * Describe rejected branch continuations without inspecting branches after the first failure.
+ *
+ * @tparam functions_meta Continuation tuple type.
+ * @tparam value_meta Input expression type, or void for factory validation.
+ * @tparam is_shared Whether every continuation receives the same input.
+ * @param operation Outer operation name.
+ * @param io_name Custom IO name.
+ * @param reason Validation failure reason.
+ * @return Named operation signature and offending continuation.
+ */
+template <std::meta::info functions_meta, std::meta::info value_meta, bool is_shared>
+consteval std::string continuations_error_msg(
+    std::string_view operation, std::string_view io_name, std::string_view reason)
+{
+    std::string msg{"fnfelt: IO "};
+    fnfelt::detail::append_string_view(msg, operation);
+    msg += " error: ";
+    fnfelt::detail::append_string_view(msg, io_name);
+    msg += "{";
+    auto offending = functions_meta;
+    if constexpr (is_sequence_tuple(functions_meta))
+    {
+        auto const functions = template_arguments_of(dealias(remove_cvref(functions_meta)));
+        std::vector<std::meta::info> values;
+        bool has_inputs = false;
+        if constexpr (is_shared)
+        {
+            has_inputs = !is_void_type(value_meta);
+            values.resize(functions.size(), value_meta);
+        }
+        else if constexpr (is_sequence_tuple(value_meta))
+        {
+            values = template_arguments_of(dealias(remove_cvref(value_meta)));
+            has_inputs = values.size() == functions.size();
+        }
+        msg += "(";
+        bool is_offending_set = false;
+        for (std::size_t idx = 0; idx < functions.size(); ++idx)
+        {
+            auto const fn_meta = functions[idx];
+            if (idx != 0)
+            {
+                msg += ", ";
+            }
+            fnfelt::detail::append_string_view(msg, display_string_of(dealias(fn_meta)));
+            // Type names above are safe even for later poisoned actions. Only infer results
+            // until the first rejected branch, matching the validator's short circuit.
+            if (is_offending_set)
+            {
+                continue;
+            }
+            bool is_invalid =
+                fnfelt::detail::callable_shape_of(fn_meta) != fnfelt::detail::CallableShape::valid;
+            if (has_inputs && !is_invalid)
+            {
+                is_invalid =
+                    !fnfelt::detail::ResultTypeInfo::from(declared_continuation_value_meta(fn_meta))
+                         .validate()
+                         .empty();
+                if (!is_invalid)
+                {
+                    if (!fnfelt::detail::is_dispatch_invocable(fn_meta, values[idx]))
+                    {
+                        is_invalid = true;
+                    }
+                    else
+                    {
+                        auto const result_meta =
+                            fnfelt::detail::dispatch_result_meta(fn_meta, values[idx]);
+                        is_invalid = is_reference_type(result_meta) || !is_io(result_meta);
+                        if (!is_invalid)
+                        {
+                            auto const effect_meta = io_value_meta(result_meta);
+                            is_invalid = is_void_type(effect_meta) ||
+                                !fnfelt::detail::ResultTypeInfo::from(effect_meta)
+                                     .validate()
+                                     .empty();
+                        }
+                    }
+                }
+            }
+            if (is_invalid)
+            {
+                offending = fn_meta;
+                is_offending_set = true;
+            }
+        }
+        msg += ") => IO";
+    }
+    else
+    {
+        msg += "<unknown>";
+    }
+    msg += "}: ";
+    fnfelt::detail::append_string_view(msg, reason);
+    msg += ": ";
+    fnfelt::detail::append_string_view(msg, display_string_of(dealias(offending)));
     return msg;
 }
 }  // namespace fnfelt::monad::io::detail
@@ -356,9 +467,9 @@ struct SequenceIOTraits : CreateIOTraits<name_cstr>
      * Validate the tuple or immutable array of IOs.
      *
      * Checks, in order: the argument is a `std::tuple` specialisation, and every element of it is a
-     * non-reference IO that produces a value. An empty tuple is accepted: it sequences to an IO of
-     * an empty tuple. An `immer::array` is accepted when its element type is an IO producing a
-     * value, including when the array is empty.
+     * non-reference IO that produces a value, validating any Result payload types. An empty tuple
+     * is accepted: it sequences to an IO of an empty tuple. An `immer::array` is accepted when its
+     * element type is an IO producing a valid value, including when the array is empty.
      *
      * @param tuple_meta Reflection of the tuple or immutable array of element types.
      * @return Empty string if validation passes, otherwise a string describing the error.
@@ -377,7 +488,14 @@ struct SequenceIOTraits : CreateIOTraits<name_cstr>
             {
                 return "element of the array is not an IO";
             }
-            if (is_void_type(detail::io_value_meta(element_meta)))
+            auto const value_meta = detail::io_value_meta(element_meta);
+            // Validate each Result before the collected array hides it as nested data.
+            if (auto const reason = fnfelt::detail::ResultTypeInfo::from(value_meta).validate();
+                !reason.empty())
+            {
+                return reason;
+            }
+            if (is_void_type(value_meta))
             {
                 return "element of the array produces no value";
             }
@@ -397,7 +515,14 @@ struct SequenceIOTraits : CreateIOTraits<name_cstr>
             {
                 return "element of the tuple is not an IO";
             }
-            if (is_void_type(detail::io_value_meta(element_meta)))
+            auto const value_meta = detail::io_value_meta(element_meta);
+            // The aggregate action only exposes a tuple, so its validator cannot check elements.
+            if (auto const reason = fnfelt::detail::ResultTypeInfo::from(value_meta).validate();
+                !reason.empty())
+            {
+                return reason;
+            }
+            if (is_void_type(value_meta))
             {
                 return "element of the tuple produces no value";
             }

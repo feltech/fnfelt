@@ -737,15 +737,13 @@ TEST_CASE("AndThenIOTraits::validate_and_then rejects continuation types with th
         AndThenIOTraits::validate_and_then(
             ^^IO<int (*)()>, ^^decltype([](int, int) { return 1; })) ==
         "continuation function does not accept the source IO's value");
-    // A non-tuple source value with all-type template arguments (e.g. std::optional<int>) is not
-    // spread, even though a callable taking its single element would be structurally invocable.
+    // Standard optional is ordinary data; only the Result shape exposes a success payload.
     static_assert(
         AndThenIOTraits::validate_and_then(
             ^^IO<std::optional<int> (*)()>, ^^decltype([](int) {
         using action_t = decltype([] { return 1; });
         return IO<action_t>{action_t{}};
-    })) ==
-        "continuation function does not accept the source IO's value");
+    })) == "continuation function does not accept the source IO's value");
     // Callable but returns a non-IO.
     static_assert(
         AndThenIOTraits::validate_and_then(^^IO<int (*)()>, ^^decltype([](int) { return 1; })) ==

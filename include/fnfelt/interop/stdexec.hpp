@@ -14,6 +14,8 @@
 #include <libfork/core/ext/context.hpp>
 #include <stdexec/execution.hpp>
 
+#include <fnfelt/result.hpp>
+
 #include "./detail/stdexec.hpp"
 
 namespace fnfelt::interop
@@ -21,19 +23,22 @@ namespace fnfelt::interop
 /**
  * Owned value, sender error, or stopped outcome of awaiting a sender.
  *
- * This is an alias for nested std::optional and std::expected, i.e.
+ * The result always has the fixed shape
  *
  * ```
- * std::optional<std::expected<Value, Error>>
+ * Result<TSuccessPayload, TErrorPayload>
  * ```
  *
- * A disengaged optional means stopped. Success stores monostate for no arguments, a decayed
- * value for one, or a tuple for several. Multiple distinct alternatives use a variant. Errors
- * use the same direct-or-variant convention. A channel with no signatures uses an unreachable
- * monostate placeholder.
- * Arguments are stored as decayed values; pointer-like values continue to borrow their referents.
- * Direct channel types must meet the bridge's storage requirements: in_place_t, unexpect_t,
- * and unexpected specializations are rejected. Tuples or variants containing them are supported.
+ * Querying completion signatures uses the same sender and receiver environment as execution.
+ * Success stores monostate for no arguments,
+ * a decayed value for one, or a tuple for several. Multiple distinct alternatives use a variant.
+ * Errors use the same direct-or-variant convention. No advertised errors produce Infallible;
+ * no advertised values use an unreachable monostate placeholder. Standard optional and expected
+ * successful values remain
+ * ordinary data. Arguments are stored as decayed values; pointer-like values continue to borrow
+ * their referents. Direct success types must meet std::expected's value-type requirements:
+ * in_place_t, unexpect_t, and unexpected specializations are rejected. Tuples or variants
+ * containing them are supported, as are these types as sender errors.
  *
  * @tparam TSender Sender stored by value and consumed as an rvalue.
  * @tparam TEnvironment Receiver environment stored by value and exposed as a const reference.
@@ -48,20 +53,20 @@ using sender_outcome_t =
  * co_await yields sender_outcome_t<TSender, TEnvironment>, for example:
  * @code
  * // stdexec::just(42)
- * using integer_outcome = std::optional<std::expected<int, std::monostate>>;
+ * using integer_outcome = Result<int, Infallible>;
  *
  * // stdexec::just(42, std::string{"data"})
- * using tuple_outcome = std::optional<std::expected<
- *     std::tuple<int, std::string>, std::monostate>>;
+ * using tuple_outcome = Result<std::tuple<int, std::string>, Infallible>;
  *
  * // stdexec::just_error(std::error_code{})
- * using error_outcome = std::optional<std::expected<std::monostate, std::error_code>>;
+ * using error_outcome = Result<std::monostate, std::error_code>;
  * @endcode
  *
- * A disengaged optional means stopped. An unexpected value holds the sender-provided error.
- * Constructing owned completion values and errors must not throw; an exception during receiver
- * completion terminates. Constructors need not declare noexcept. Exceptions during connection
- * or moving the completed outcome to its consumer can propagate.
+ * A disengaged result means stopped. The Error payload holds the sender-provided error.
+ * Inspect the outer optional before accessing the expected. Constructing owned values or errors
+ * during completion must not throw: completion is noexcept, so an exception terminates execution.
+ * Constructors need not be declared noexcept. Connection exceptions and exceptions while moving
+ * the completed result out of storage propagate normally.
  *
  * Immediately co_await the result using the current task's self.context(); do not suspend or
  * migrate between obtaining that context and awaiting. The libfork pool, external I/O service,
@@ -78,6 +83,8 @@ using sender_outcome_t =
  * auto program = fnfelt::monad::io::create_async(action, stdexec::just(42));
  * @endcode
  *
+ * @tparam TSender Sender type forwarded into owned storage.
+ * @tparam TEnvironment Receiver environment type forwarded into owned storage.
  * @param current Current libfork worker context, obtained from self.context().
  * @param sender Sender copied or moved into the awaitable.
  * @param environment Properties exposed through the receiver's get_env().

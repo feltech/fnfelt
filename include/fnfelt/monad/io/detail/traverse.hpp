@@ -27,6 +27,7 @@
 #include <fnfelt/detail/type_names.hpp>
 #include <fnfelt/monad/io/detail.hpp>
 #include <fnfelt/monad/io/detail/sequence.hpp>
+#include <fnfelt/result.hpp>
 
 namespace fnfelt::monad::io
 {
@@ -117,6 +118,26 @@ consteval std::meta::info traverse_first_element_meta(std::meta::info tuple_meta
 }
 
 /**
+ * Reflect a mapped child while preserving malformed declared wrappers for diagnostics.
+ *
+ * @param receiver_meta Continuation expression type.
+ * @param element_meta Input element expression type.
+ * @return Declared malformed return, or the dispatch result.
+ */
+consteval std::meta::info traverse_result_meta(
+    std::meta::info receiver_meta, std::meta::info element_meta)
+{
+    if (!fnfelt::detail::ResultTypeInfo::from(declared_continuation_value_meta(receiver_meta))
+             .validate()
+             .empty())
+    {
+        // Invocability may complete this return type, losing the outer operation's context.
+        return declared_function_result_meta(receiver_meta);
+    }
+    return fnfelt::detail::dispatch_result_meta(receiver_meta, element_meta);
+}
+
+/**
  * Name of a tuple element for the diagnostic element list: an IO's traits name, otherwise the
  * reflected type's short name.
  *
@@ -154,11 +175,14 @@ consteval std::string_view maybe_traverse_result_io_name()
     // "<unknown>". Keep the two in step.
     if constexpr (
         is_type(value_meta) && is_type(continuation_meta) &&
-        is_complete_type(remove_cvref(continuation_meta)))
+        is_complete_type(remove_cvref(continuation_meta)) &&
+        !is_reference_type(continuation_meta) &&
+        (is_class_type(remove_cvref(continuation_meta)) ||
+         (is_pointer_type(remove_cvref(continuation_meta)) &&
+          is_function_type(remove_pointer(remove_cvref(continuation_meta))))))
     {
         constexpr std::meta::info receiver_meta = add_lvalue_reference(continuation_meta);
-        constexpr std::meta::info result_meta =
-            fnfelt::detail::dispatch_result_meta(receiver_meta, value_meta);
+        constexpr std::meta::info result_meta = traverse_result_meta(receiver_meta, value_meta);
         if constexpr (is_io(result_meta))
         {
             // A continuation may return an IO reference; a reference cannot be spliced, and the
@@ -200,8 +224,9 @@ consteval bool is_continuation_shape_valid(std::meta::info continuation_meta)
  * `<unknown>` when undeterminable), the validation reason, and the offending argument's display
  * string (the continuation itself when its shape is invalid - not a type, incomplete, a reference,
  * or neither a class nor a function pointer type; otherwise the first element whose value the
- * continuation does not map to a value-producing IO; otherwise the continuation, e.g. when a custom
- * `validate_traverse` rejected the tuple; otherwise the input itself). Unsupported inputs use
+ * continuation does not map to an IO producing a valid value; otherwise the continuation, e.g. when
+ * a custom `validate_traverse` rejected the tuple; otherwise the input itself). Unsupported inputs
+ * use
  * `<unknown>` instead of an element list.
  * Qualifiers are stripped before a reflection is named or spliced: a qualified reflection has no
  * identifier, and a reference cannot be spliced into a type, so naming one is a hard error.
@@ -240,11 +265,17 @@ consteval std::string traverse_error_msg(std::string_view io_name, std::string_v
         fnfelt::detail::append_string_view(msg, maybe_element_name<element_meta>());
         msg += ">";
         offending = continuation_meta;
-        if constexpr (is_continuation_shape_valid(continuation_meta))
+        if constexpr (
+            is_continuation_shape_valid(continuation_meta) &&
+            validate_traverse_array(target_meta).empty())
         {
-            constexpr auto result_meta = fnfelt::detail::dispatch_result_meta(
-                add_lvalue_reference(continuation_meta), element_meta);
-            if constexpr (!is_io(result_meta) || is_void_type(io_value_meta(result_meta)))
+            constexpr auto result_meta =
+                traverse_result_meta(add_lvalue_reference(continuation_meta), element_meta);
+            if constexpr (
+                !is_io(result_meta) || is_void_type(io_value_meta(result_meta)) ||
+                !fnfelt::detail::ResultTypeInfo::from(io_value_meta(result_meta))
+                     .validate()
+                     .empty())
             {
                 offending = element_meta;
             }
@@ -279,16 +310,21 @@ consteval std::string traverse_error_msg(std::string_view io_name, std::string_v
             // custom validate_traverse rejected the tuple after an all-valid element scan).
             // The shape check above guarantees a type, so add_lvalue_reference cannot fail.
             constexpr std::meta::info receiver_meta = add_lvalue_reference(continuation_meta);
-            template for (constexpr auto element_meta :
-                          std::define_static_array(template_arguments_of(target_meta)))
+            // A template expansion would instantiate later mapper bodies even after a rejected
+            // earlier element. An ordinary constant-evaluated loop preserves short circuiting.
+            for (auto const element_meta : template_arguments_of(target_meta))
             {
-                constexpr std::meta::info named_meta = remove_cvref(element_meta);
+                auto const named_meta = remove_cvref(element_meta);
                 if (!is_offending_set)
                 {
                     std::meta::info const result_meta =
-                        fnfelt::detail::dispatch_result_meta(receiver_meta, element_meta);
+                        traverse_result_meta(receiver_meta, element_meta);
                     if (!is_io(result_meta) ||
-                        (is_io(result_meta) && is_void_type(io_value_meta(result_meta))))
+                        (is_io(result_meta) &&
+                         (is_void_type(io_value_meta(result_meta)) ||
+                          !fnfelt::detail::ResultTypeInfo::from(io_value_meta(result_meta))
+                               .validate()
+                               .empty())))
                     {
                         offending = named_meta;
                         is_offending_set = true;
@@ -309,8 +345,24 @@ consteval std::string traverse_error_msg(std::string_view io_name, std::string_v
     }
     msg += " => ";
     constexpr std::meta::info first_meta = traverse_first_element_meta(target_meta);
-    fnfelt::detail::append_string_view(
-        msg, maybe_traverse_result_io_name<first_meta, continuation_meta>());
+    if constexpr (is_sequence_array(target_meta))
+    {
+        if constexpr (validate_traverse_array(target_meta).empty())
+        {
+            fnfelt::detail::append_string_view(
+                msg, maybe_traverse_result_io_name<first_meta, continuation_meta>());
+        }
+        else
+        {
+            // Storage failed before mapper invocation was considered by validation.
+            msg += "<unknown>";
+        }
+    }
+    else
+    {
+        fnfelt::detail::append_string_view(
+            msg, maybe_traverse_result_io_name<first_meta, continuation_meta>());
+    }
     msg += "}: ";
     fnfelt::detail::append_string_view(msg, reason);
     msg += ": ";
@@ -397,6 +449,14 @@ struct TraverseIOTraits : SequenceIOTraits<name_cstr>
         }
         for (auto const element_meta : elements)
         {
+            // Inspect known pointer returns before an invocability query completes their IO.
+            if (auto const reason = fnfelt::detail::ResultTypeInfo::from(
+                                        declared_continuation_value_meta(receiver_meta))
+                                        .validate();
+                !reason.empty())
+            {
+                return reason;
+            }
             if (!fnfelt::detail::is_dispatch_invocable(receiver_meta, element_meta))
             {
                 return "continuation function does not accept the tuple element's value";
@@ -407,7 +467,15 @@ struct TraverseIOTraits : SequenceIOTraits<name_cstr>
             {
                 return "continuation function must return an IO";
             }
-            if (is_void_type(detail::io_value_meta(result_meta)))
+            auto const value_meta = detail::io_value_meta(result_meta);
+            // Reject a malformed child Result before mapping invokes the continuation or checks
+            // Immer storage. Sequence's aggregate output cannot provide this traverse context.
+            if (auto const reason = fnfelt::detail::ResultTypeInfo::from(value_meta).validate();
+                !reason.empty())
+            {
+                return reason;
+            }
+            if (is_void_type(value_meta))
             {
                 return "continuation function must return an IO that produces a value";
             }

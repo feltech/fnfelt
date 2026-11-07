@@ -90,6 +90,14 @@ struct SplitIOTraits : SequenceIOTraits<name_cstr>
         for (std::size_t idx = 0; idx < functions.size(); ++idx)
         {
             auto const fn_meta = functions[idx];
+            // Inspect declared wrappers before invocation can complete an invalid child IO.
+            if (auto const reason =
+                    fnfelt::detail::ResultTypeInfo::from(declared_continuation_value_meta(fn_meta))
+                        .validate();
+                !reason.empty())
+            {
+                return reason;
+            }
             if (fnfelt::detail::callable_shape_of(fn_meta) !=
                     fnfelt::detail::CallableShape::valid ||
                 !fnfelt::detail::is_dispatch_invocable(fn_meta, values[idx]))
@@ -97,6 +105,16 @@ struct SplitIOTraits : SequenceIOTraits<name_cstr>
                 return "continuation must accept its corresponding input value";
             }
             auto const result_meta = fnfelt::detail::dispatch_result_meta(fn_meta, values[idx]);
+            // An earlier malformed Result must not instantiate a later continuation's body.
+            if (is_io(result_meta))
+            {
+                if (auto const reason =
+                        fnfelt::detail::ResultTypeInfo::from(io_value_meta(result_meta)).validate();
+                    !reason.empty())
+                {
+                    return reason;
+                }
+            }
             results.push_back(result_meta);
         }
         return SequenceIOTraits<name_cstr>::validate_sequence(substitute(^^std::tuple, results));
@@ -125,7 +143,10 @@ struct SplitAction
     constexpr auto operator()(this auto && self, TValues values)
     {
         constexpr auto reason = TTraits::validate_split(^^TFunctions, ^^TValues);
-        static_assert(reason.empty(), sequence_error_msg<^^TFunctions>(TTraits::name, reason));
+        static_assert(
+            reason.empty(),
+            continuations_error_msg<^^TFunctions, ^^TValues, false>(
+                "split", TTraits::name, reason));
         if constexpr (reason.empty())
         {
             auto functions = FW(self).functions;

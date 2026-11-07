@@ -64,48 +64,104 @@ struct TransportProxyTag : AsyncProxyTag
 }  // namespace detail
 
 /// @cond
-/// Traits validating an IO's action, naming the instantiation used in diagnostics.
 namespace detail
 {
+/**
+ * Traits validating an IO's action, naming the instantiation used in diagnostics.
+ *
+ * @tparam name_cstr Diagnostic name with static storage duration.
+ */
 template <char const * name_cstr = detail::default_io_name>
 struct CreateIOTraits;
 
 template <char const * name_cstr = detail::default_io_name>
 struct TapIOTraits;
 
-/// Traits validating a value lifted by `io::just`.
+/**
+ * Traits validating a value lifted by `io::just`.
+ *
+ * @tparam name_cstr Diagnostic name with static storage duration.
+ */
 template <char const * name_cstr = detail::default_io_name>
 struct JustIOTraits;
 
-/// Traits validating the source IO and continuation function provided to `io::and_then`.
+/**
+ * Traits validating the source IO and continuation function provided to `io::and_then`.
+ *
+ * @tparam name_cstr Diagnostic name with static storage duration.
+ */
 template <char const * name_cstr = detail::default_io_name>
 struct AndThenIOTraits;
 
-/// Traits validating the source IO and transformer function provided to `io::transform`.
+/**
+ * Traits validating a source IO and error recovery continuation.
+ *
+ * @tparam name_cstr Diagnostic name with static storage duration.
+ */
+template <char const * name_cstr = detail::default_io_name>
+struct OrElseIOTraits;
+
+/**
+ * Traits validating the source IO and transformer function provided to `io::transform`.
+ *
+ * @tparam name_cstr Diagnostic name with static storage duration.
+ */
 template <char const * name_cstr = detail::default_io_name>
 struct TransformIOTraits;
 
-/// Traits validating a choice IO and its conditional fallback.
+/**
+ * Traits validating a Result source and its error mapper.
+ *
+ * @tparam name_cstr Diagnostic name with static storage duration.
+ */
+template <char const * name_cstr = detail::default_io_name>
+struct TransformErrorIOTraits;
+
+/**
+ * Traits validating a choice IO and its conditional fallback.
+ *
+ * @tparam name_cstr Diagnostic name with static storage duration.
+ */
 template <char const * name_cstr = detail::default_io_name>
 struct SelectIOTraits;
 
-/// Traits validating the IO-wrapped function and value provided to `io::ap`.
+/**
+ * Traits validating the IO-wrapped function and value provided to `io::ap`.
+ *
+ * @tparam name_cstr Diagnostic name with static storage duration.
+ */
 template <char const * name_cstr = detail::default_io_name>
 struct ApIOTraits;
 
-/// Traits validating a tuple of IOs provided to `io::sequence`.
+/**
+ * Traits validating a tuple of IOs provided to `io::sequence`.
+ *
+ * @tparam name_cstr Diagnostic name with static storage duration.
+ */
 template <char const * name_cstr = detail::default_io_name>
 struct SequenceIOTraits;
 
-/// Traits validating a tuple of values and a continuation provided to `io::traverse`.
+/**
+ * Traits validating a tuple of values and a continuation provided to `io::traverse`.
+ *
+ * @tparam name_cstr Diagnostic name with static storage duration.
+ */
 template <char const * name_cstr = detail::default_io_name>
 struct TraverseIOTraits;
 
-/// Traits validating the source IO, state and stepper function provided to `io::repeat_until`.
+/**
+ * Traits validating the source IO, state and stepper function provided to `io::repeat_until`.
+ *
+ * @tparam name_cstr Diagnostic name with static storage duration.
+ */
 template <char const * name_cstr = detail::default_io_name>
 struct RepeatUntilIOTraits;
 
-/// Traits validating the stateless coroutine function provided to `io::create_async`.
+/**
+ * Traits validating the stateless coroutine function provided to `io::create_async`.
+ *
+ * @tparam name_cstr Diagnostic name with static storage duration.
+ */
 template <char const * name_cstr = detail::default_io_name>
 struct CreateAsyncIOTraits;
 }  // namespace detail
@@ -113,7 +169,12 @@ struct CreateAsyncIOTraits;
 template <class TAction, class TTraits = detail::CreateIOTraits<>>
 class IO;
 
-/// Run proxy holding an IO's action; defined in async.hpp.
+/**
+ * Run proxy holding an IO's action; defined in async.hpp.
+ *
+ * @tparam TAction Deferred action type.
+ * @tparam TTraits Creation and execution validation traits.
+ */
 template <class TAction, class TTraits = detail::CreateIOTraits<>>
 struct IORunProxy;
 
@@ -135,11 +196,23 @@ template <class TTraits = detail::AndThenIOTraits<>, class TSource, class TConti
 template <char const * name_cstr, class TSource, class TContinuation>
 [[nodiscard]] constexpr auto and_then(TSource && source, TContinuation && continuation);
 
+template <class TTraits = detail::OrElseIOTraits<>, class TSource, class TContinuation>
+[[nodiscard]] constexpr auto or_else(TSource && source, TContinuation && continuation);
+
+template <char const * name_cstr, class TSource, class TContinuation>
+[[nodiscard]] constexpr auto or_else(TSource && source, TContinuation && continuation);
+
 // Forward declarations for the free transform functions; defined and documented in transform.hpp.
 // The source IO is taken by forwarding reference so rvalue chains move and lvalues are copied.
 // Invalid pairs (including non-IO sources) are rejected by validation inside the definitions.
 template <class TTraits = detail::TransformIOTraits<>, class TSource, class TTransformer>
 [[nodiscard]] constexpr auto transform(TSource && source, TTransformer && transformer);
+
+template <class TTraits = detail::TransformErrorIOTraits<>, class TSource, class TTransformer>
+[[nodiscard]] constexpr auto transform_error(TSource && source, TTransformer && transformer);
+
+template <char const * name_cstr, class TSource, class TTransformer>
+[[nodiscard]] constexpr auto transform_error(TSource && source, TTransformer && transformer);
 
 template <char const * name_cstr, class TSource, class TTransformer>
 // cpplint mistakes this for std::transform; no <algorithm> is used here.

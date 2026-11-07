@@ -14,6 +14,7 @@
 #include <meta>
 
 #include <fnfelt/monad/io/fwd.hpp>
+#include <fnfelt/result.hpp>
 
 namespace fnfelt::monad::io
 {
@@ -59,6 +60,29 @@ consteval bool is_empty_object(std::meta::info type_meta)
 }
 
 /**
+ * Reflect a function pointer's declared return without testing invocation.
+ *
+ * Other callable forms return void as an unknown-type placeholder. Their return types may
+ * depend on overload resolution or deduction of a generic call operator's body.
+ *
+ * @param callable_meta Potential function pointer type.
+ * @return Declared return type, or void when unavailable without invocation.
+ */
+consteval std::meta::info declared_function_result_meta(std::meta::info callable_meta)
+{
+    if (!is_type(callable_meta))
+    {
+        return ^^void;
+    }
+    callable_meta = remove_cvref(callable_meta);
+    if (is_pointer_type(callable_meta) && is_function_type(remove_pointer(callable_meta)))
+    {
+        return return_type_of(remove_pointer(callable_meta));
+    }
+    return ^^void;
+}
+
+/**
  * Reflection of the value an action produces when run.
  *
  * An asynchronous action's value comes from its proxy's `value_type` alias.
@@ -73,6 +97,13 @@ consteval bool is_empty_object(std::meta::info type_meta)
  */
 consteval std::meta::info action_value_meta(std::meta::info action_meta)
 {
+    auto const declared_result = declared_function_result_meta(action_meta);
+    // Invocability can complete an invalid standard wrapper. Preserve its metadata so the
+    // operation's validator can report the payload error in its own diagnostic context.
+    if (!fnfelt::detail::ResultTypeInfo::from(declared_result).validate().empty())
+    {
+        return declared_result;
+    }
     // Invocability queries are a hard error for incomplete types, so guard completeness first.
     if (is_complete_type(action_meta) && is_invocable_type(action_meta, {}))
     {
@@ -118,6 +149,21 @@ consteval std::meta::info io_value_meta(std::meta::info io_meta)
 }
 
 /**
+ * Reflect the declared function result or its IO effect without invoking the function.
+ *
+ * @param callable_meta Potential function pointer type.
+ * @return Declared function-pointer IO effect, other declared result, or void when unavailable.
+ */
+consteval std::meta::info declared_continuation_value_meta(std::meta::info callable_meta)
+{
+    auto const result_meta = declared_function_result_meta(callable_meta);
+    // A child action may have a deduced body. Do not invoke it before checking whether the
+    // continuation accepts its input: only another declared function pointer is safe here.
+    return is_io(result_meta) ? declared_function_result_meta(io_action_meta(result_meta))
+                              : result_meta;
+}
+
+/**
  * Name of IO.
  *
  * @tparam io_meta IO reflection to check.
@@ -128,7 +174,9 @@ constexpr std::string_view maybe_io_name()
 {
     if constexpr (is_io(io_meta))
     {
-        return [:io_meta:] ::traits::name;
+        // Naming must not complete the IO: its action may be the reason validation failed.
+        constexpr auto traits_meta = template_arguments_of(dealias(remove_cvref(io_meta)))[1];
+        return [:traits_meta:] ::name;
     }
 
     return "<unknown>";

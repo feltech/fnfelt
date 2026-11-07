@@ -26,6 +26,7 @@
 #include <fnfelt/monad/io/detail/async.hpp>
 #include <fnfelt/monad/io/detail/create.hpp>
 #include <fnfelt/monad/io/fwd.hpp>
+#include <fnfelt/result.hpp>
 
 #include <fnfelt/macros_push.hpp>
 
@@ -141,7 +142,17 @@ constexpr std::string_view maybe_ap_result_name()
     {
         constexpr std::meta::info fn_value_meta = io_value_meta(fn_io_meta);
         constexpr std::meta::info val_value_meta = io_value_meta(value_io_meta);
-        if constexpr (is_complete_type(fn_value_meta))
+        if constexpr (
+            !fnfelt::detail::ResultTypeInfo::from(fn_value_meta).validate().empty() ||
+            !fnfelt::detail::ResultTypeInfo::from(val_value_meta).validate().empty() ||
+            !fnfelt::detail::ResultTypeInfo::from(declared_function_result_meta(fn_value_meta))
+                 .validate()
+                 .empty())
+        {
+            // Diagnostic rendering must not invoke a function whose Result was rejected.
+            return "<unknown>";
+        }
+        else if constexpr (is_complete_type(fn_value_meta))
         {
             if constexpr (fnfelt::detail::is_dispatch_invocable(fn_value_meta, val_value_meta))
             {
@@ -302,11 +313,27 @@ struct ApIOTraits : CreateIOTraits<name_cstr>
         }
         std::meta::info const fn_value_meta = detail::io_value_meta(fn_io_meta);
         std::meta::info const val_value_meta = detail::io_value_meta(value_io_meta);
+        for (auto const result_meta :
+             {fn_value_meta, val_value_meta, declared_function_result_meta(fn_value_meta)})
+        {
+            if (auto const reason = fnfelt::detail::ResultTypeInfo::from(result_meta).validate();
+                !reason.empty())
+            {
+                return reason;
+            }
+        }
         if (!fnfelt::detail::is_dispatch_invocable(fn_value_meta, val_value_meta))
         {
             return "IO-wrapped function's callable does not accept the IO-wrapped value's value";
         }
-        if (is_void_type(fnfelt::detail::dispatch_result_meta(fn_value_meta, val_value_meta)))
+        auto const result_meta =
+            fnfelt::detail::dispatch_result_meta(fn_value_meta, val_value_meta);
+        if (auto const reason = fnfelt::detail::ResultTypeInfo::from(result_meta).validate();
+            !reason.empty())
+        {
+            return reason;
+        }
+        if (is_void_type(result_meta))
         {
             return "IO-wrapped function's callable does not return a value";
         }

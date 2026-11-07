@@ -25,7 +25,12 @@ namespace fnfelt::monad::io
  *
  * Execution is lazy and ordered, including when either computation is asynchronous.
  * Tuple and pair source values are discarded whole. The result is the next IO's value.
+ * Result error or stop bypasses the next computation. Successful Result payloads, including
+ * void, are discarded; the next value retains the source's Result layer and error domain.
  *
+ * @tparam TTraits Validation and result traits.
+ * @tparam TSource Source IO argument type.
+ * @tparam TNext Next IO argument type.
  * @param source Source computation.
  * @param next Next computation.
  * @return IO producing the next value.
@@ -52,6 +57,9 @@ template <class TTraits, class TSource, class TNext>
 /**
  * Discard a value, run the next computation and name the result.
  *
+ * @tparam name_cstr Diagnostic name with static storage duration.
+ * @tparam TSource Source IO argument type.
+ * @tparam TNext Next IO argument type.
  * @param source Source computation.
  * @param next Next computation.
  * @return Named IO.

@@ -25,6 +25,7 @@
 #include <fnfelt/detail/type_names.hpp>
 #include <fnfelt/monad/io/detail.hpp>
 #include <fnfelt/monad/io/detail/fwd.hpp>
+#include <fnfelt/result.hpp>
 
 #include <fnfelt/macros_push.hpp>
 
@@ -369,6 +370,12 @@ struct CreateIOTraits
         {
             return "provided action's async proxy value should not be an IO";
         }
+        // Inspect the payloads before completeness queries instantiate the standard wrappers.
+        if (auto const reason = fnfelt::detail::ResultTypeInfo::from(value_meta).validate();
+            !reason.empty())
+        {
+            return reason;
+        }
         if (!is_complete_type(value_meta))
         {
             return "provided action's async proxy value is not a complete type";
@@ -465,11 +472,24 @@ struct CreateIOTraits
             case fnfelt::detail::CallableShape::valid:
                 break;
         }
+        // A concrete signature exposes its return type without constructing its wrappers.
+        if (auto const reason =
+                fnfelt::detail::ResultTypeInfo::from(declared_function_result_meta(action_meta))
+                    .validate();
+            !reason.empty())
+        {
+            return reason;
+        }
         if (!is_invocable_type(action_meta, {}))
         {
             return "provided action is not callable with no arguments";
         }
         std::meta::info const result_meta = invoke_result(action_meta, {});
+        if (auto const reason = fnfelt::detail::ResultTypeInfo::from(result_meta).validate();
+            !reason.empty())
+        {
+            return reason;
+        }
         if (is_reference_type(result_meta))
         {
             return "provided action returns a reference, return by value instead";

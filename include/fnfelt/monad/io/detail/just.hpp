@@ -16,6 +16,7 @@
 
 #include <fnfelt/monad/io/detail.hpp>
 #include <fnfelt/monad/io/detail/create.hpp>
+#include <fnfelt/result.hpp>
 
 #include <fnfelt/macros_push.hpp>
 
@@ -116,7 +117,16 @@ struct JustIOTraits : CreateIOTraits<name_cstr>
      */
     static consteval std::string_view validate_just(std::meta::info value_meta)
     {
+        if (!is_type(value_meta))
+        {
+            return "provided value is not a complete type";
+        }
         value_meta = dealias(value_meta);
+        if (auto const reason = fnfelt::detail::ResultTypeInfo::from(value_meta).validate();
+            !reason.empty())
+        {
+            return reason;
+        }
         if (!is_complete_type(value_meta))
         {
             return "provided value is not a complete type";

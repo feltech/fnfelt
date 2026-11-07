@@ -24,6 +24,7 @@
 #include <fnfelt/monad/io/detail/async.hpp>
 #include <fnfelt/monad/io/detail/create.hpp>
 #include <fnfelt/monad/io/fwd.hpp>
+#include <fnfelt/result.hpp>
 
 #include <fnfelt/macros_push.hpp>
 
@@ -66,7 +67,18 @@ struct TransformError
 template <class TSourceIO, class TTransformer>
 consteval std::meta::info transform_value_type_meta()
 {
-    return fnfelt::detail::dispatch_result_meta(^^TTransformer, io_value_meta(^^TSourceIO));
+    constexpr auto source_meta = io_value_meta(^^TSourceIO);
+    constexpr auto continuation_info =
+        fnfelt::detail::SuccessContinuationInfo::from(^^TTransformer, source_meta);
+    if constexpr (fnfelt::detail::ResultTraits::is_result_type(source_meta))
+    {
+        auto result_type_info = fnfelt::detail::ResultTypeInfo::from(source_meta);
+        // Mapping preserves the source layer. In particular, a mapper-returned Result is data
+        // inside this successful payload; adopting its channels belongs to and_then instead.
+        result_type_info.success_payload_meta = continuation_info.result_meta;
+        return result_type_info.type_meta();
+    }
+    return continuation_info.result_meta;
 }
 
 /**
@@ -148,12 +160,9 @@ struct TransformAction
         else
         {
             auto input = FW(self).source.build().sync_wait();
-            // The stored transformer is moved into the call so the receiver matches validation
-            // and inference; the direct-vs-spread dispatch is `invoke_dispatch`'s.
-            return fnfelt::detail::invoke_dispatch(FW(self).transformer, std::move(input));
+            return fnfelt::detail::map_success_result<result_type>(
+                FW(self).transformer, std::move(input));
         }
-        // Not reachable: validation guarantees one of the dispatches above is taken.
-        std::unreachable();
     }
 };
 
@@ -194,24 +203,39 @@ constexpr std::string_view maybe_transformer_result_name()
     if constexpr (is_io(source_io_meta) && is_complete_type(transformer_meta))
     {
         constexpr std::meta::info source_value_meta = io_value_meta(source_io_meta);
-        if constexpr (fnfelt::detail::is_dispatch_invocable(transformer_meta, source_value_meta))
+        constexpr bool has_invalid_declared_result =
+            !fnfelt::detail::ResultTypeInfo::from(declared_function_result_meta(transformer_meta))
+                 .validate()
+                 .empty();
+        // Formatting must respect the same rejection boundary as validation.
+        if constexpr (
+            !fnfelt::detail::ResultTypeInfo::from(source_value_meta).validate().empty() ||
+            has_invalid_declared_result)
         {
-            return transform_result_name<fnfelt::detail::dispatch_result_meta(
-                transformer_meta, source_value_meta)>();
+            return "<unknown>";
         }
-        // A rejected argument does not erase a concrete callable's declared return type.
-        // Do not guess which signature an overloaded or generic call operator would select.
-        using transformer_type = [:remove_cvref(transformer_meta):];
-        if constexpr (requires { &transformer_type::operator(); })
+        else
         {
-            return transform_result_name<return_type_of(^^transformer_type::operator())>();
-        }
-        if constexpr (is_pointer_type(transformer_meta))
-        {
-            constexpr auto pointee_meta = remove_pointer(transformer_meta);
-            if constexpr (is_function_type(pointee_meta))
+            constexpr auto continuation_info =
+                fnfelt::detail::SuccessContinuationInfo::from(transformer_meta, source_value_meta);
+            if constexpr (continuation_info.is_valid)
             {
-                return transform_result_name<return_type_of(pointee_meta)>();
+                return transform_result_name<continuation_info.result_meta>();
+            }
+            // A rejected argument does not erase a concrete callable's declared return type.
+            // Do not guess which signature an overloaded or generic call operator would select.
+            using transformer_type = [:remove_cvref(transformer_meta):];
+            if constexpr (requires { &transformer_type::operator(); })
+            {
+                return transform_result_name<return_type_of(^^transformer_type::operator())>();
+            }
+            if constexpr (is_pointer_type(transformer_meta))
+            {
+                constexpr auto pointee_meta = remove_pointer(transformer_meta);
+                if constexpr (is_function_type(pointee_meta))
+                {
+                    return transform_result_name<return_type_of(pointee_meta)>();
+                }
             }
         }
     }
@@ -224,9 +248,9 @@ constexpr std::string_view maybe_transformer_result_name()
  *
  * Uses reflection to extract type names and diagnostics about the source IO and transformer when
  * transform validation fails. The message includes the IO name, the source IO type, the
- * transformer's result type (if determinable), the specific validation failure reason, and the
- * offending argument's display string (the source type if the source is not an IO, otherwise the
- * transformer type).
+ * transformer's result type (if determinable), the specific validation failure reason, and
+ * the offending argument's display string (the source type if the source is not an IO, otherwise
+ * the transformer type).
  *
  * This function is called only within a static_assert to provide friendly diagnostics; it must
  * never be evaluated at runtime.
@@ -277,23 +301,32 @@ struct TransformProxy : detail::TransportProxyTag
     using value_type = [:detail::transform_value_type_meta<TSourceIO, TTransformer>():];
     /// Source IO and transformer spread into @ref fn.
     std::tuple<TSourceIO, TTransformer> arg;
-    /// Async composition driver.
+    /**
+     * Async composition driver.
+     *
+     * @par Callable parameters
+     * The unnamed first argument is supplied by libfork and is unused.
+     * `source`: Source IO to run. `transformer`: Successful-payload mapper.
+     */
     static constexpr auto fn = [](auto, TSourceIO source, TTransformer transformer)
         -> lf::task<detail::task_result_t<value_type>>
     {
         auto input = detail::unpack_result(co_await detail::just_child(std::move(source)));
-        // The stored transformer is moved into the call so the receiver matches validation and
-        // inference; the direct-vs-spread dispatch is `invoke_dispatch`'s, mirroring the
-        // synchronous action.
-        co_return detail::pack_result<value_type>(
-            fnfelt::detail::invoke_dispatch(std::move(transformer), std::move(input)));
+        co_return detail::pack_result<value_type>(fnfelt::detail::map_success_result<value_type>(
+            std::move(transformer), std::move(input)));
     };
 
-    /// Transform the source inline during constant evaluation.
+    /**
+     * Transform the source inline during constant evaluation.
+     *
+     * @par Callable parameters
+     * `source`: Source IO to run. `transformer`: Successful-payload mapper.
+     */
     static constexpr auto run_inline = [](TSourceIO source, TTransformer transformer) -> value_type
     {
         auto input = std::move(source).build().sync_wait();
-        return fnfelt::detail::invoke_dispatch(std::move(transformer), std::move(input));
+        return fnfelt::detail::map_success_result<value_type>(
+            std::move(transformer), std::move(input));
     };
 
     /**
@@ -338,6 +371,11 @@ struct TransformIOTraits : CreateIOTraits<name_cstr>
             return "source IO is not an IO";
         }
         auto const value_meta = detail::io_value_meta(io_meta);
+        if (auto const reason = fnfelt::detail::ResultTypeInfo::from(value_meta).validate();
+            !reason.empty())
+        {
+            return reason;
+        }
         if (is_void_type(value_meta))
         {
             return "source IO produces no value";
@@ -356,11 +394,26 @@ struct TransformIOTraits : CreateIOTraits<name_cstr>
                 break;
         }
         transformer_meta = dealias(remove_cvref(transformer_meta));
-        auto const validate_result = [](std::meta::info result_meta) consteval -> std::string_view
+        if (auto const reason = fnfelt::detail::ResultTypeInfo::from(
+                                    declared_function_result_meta(transformer_meta))
+                                    .validate();
+            !reason.empty())
         {
+            return reason;
+        }
+        bool const is_promoted = fnfelt::detail::ResultTraits::is_result_type(value_meta);
+        auto const validate_result = [is_promoted](std::meta::info result_meta)
+                                         consteval -> std::string_view
+        {
+            if (auto const reason = fnfelt::detail::ResultTypeInfo::from(result_meta).validate();
+                !reason.empty())
+            {
+                return reason;
+            }
             if (is_void_type(result_meta))
             {
-                return "transformer function does not return a value";
+                return is_promoted ? std::string_view{}
+                                   : "transformer function does not return a value";
             }
             if (is_reference_type(result_meta))
             {
@@ -376,11 +429,23 @@ struct TransformIOTraits : CreateIOTraits<name_cstr>
             }
             return {};
         };
-        if (!fnfelt::detail::is_dispatch_invocable(transformer_meta, value_meta))
+        auto const continuation_info =
+            fnfelt::detail::SuccessContinuationInfo::from(transformer_meta, value_meta);
+        if (!continuation_info.is_valid)
         {
             return "transformer function does not accept the source IO's value";
         }
-        return validate_result(fnfelt::detail::dispatch_result_meta(transformer_meta, value_meta));
+        if (auto reason = validate_result(continuation_info.result_meta); !reason.empty())
+        {
+            return reason;
+        }
+        if (is_promoted)
+        {
+            auto result_type_info = fnfelt::detail::ResultTypeInfo::from(value_meta);
+            result_type_info.success_payload_meta = continuation_info.result_meta;
+            return result_type_info.validate();
+        }
+        return {};
     }
 };
 }  // namespace detail

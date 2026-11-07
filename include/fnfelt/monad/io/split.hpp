@@ -39,7 +39,8 @@ template <class TTraits = detail::SplitIOTraits<>, class... TFunctions>
     constexpr auto reason = TTraits::validate_split_factory(^^std::tuple<TFunctions...>);
     static_assert(
         reason.empty(),
-        detail::sequence_error_msg<^^std::tuple<TFunctions...>>(TTraits::name, reason));
+        detail::continuations_error_msg<^^std::tuple<TFunctions...>, ^^void, false>(
+            "split", TTraits::name, reason));
     if constexpr (reason.empty())
     {
         return detail::SplitAction<TTraits, std::tuple<TFunctions...>>{

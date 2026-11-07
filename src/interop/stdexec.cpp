@@ -7,7 +7,6 @@
 
 #include <doctest/doctest.h>
 
-#include <exception>
 #include <expected>
 #include <latch>
 #include <memory>
@@ -45,9 +44,7 @@ auto run_sender(TSender sender)
         .sync_wait(lf::lazy_pool{2});
 }
 
-/**
- * Operation lifetime counters for detecting missing or repeated cleanup.
- */
+/// Operation lifetime counters for detecting missing or repeated cleanup.
 struct OperationCounts
 {
     int constructed = 0;
@@ -58,6 +55,9 @@ struct OperationCounts
  * Sender fixture with chosen completion signatures and programmable completion behavior.
  *
  * Supports inline and external completion, connection failure, and operation lifetime checks.
+ *
+ * @tparam TSignatures Advertised completion signatures.
+ * @tparam TStart Completion callback type.
  */
 template <class TSignatures, class TStart>
 struct TestSender
@@ -71,6 +71,8 @@ struct TestSender
 
     /**
      * Immovable operation fixture for verifying direct construction and receiver lifetime.
+     *
+     * @tparam TReceiver Receiver retaining the completion destination.
      */
     template <class TReceiver>
     struct Operation
@@ -178,9 +180,7 @@ struct ThrowingPayload
         --*live;
     }
 };
-/**
- * Receiver environment fixture exposing a stop token and a successful result value.
- */
+/// Receiver environment fixture exposing a stop token and a successful result value.
 struct StopEnvironment
 {
     stdexec::inplace_stop_token token;
@@ -247,17 +247,44 @@ struct EnvironmentSender
             .connect(std::move(receiver));
     }
 };
+
+/// Copy and move counters observed before any result leaves the awaiting coroutine.
+struct PayloadCounts
+{
+    int copies = 0;
+    int moves = 0;
+};
+
+/// Sender payload isolating storage-to-Result adoption from later task transports.
+struct CountedPayload
+{
+    PayloadCounts * counts;
+    int number;
+
+    CountedPayload(PayloadCounts * observed, int value) : counts{observed}, number{value} {}
+    CountedPayload(CountedPayload const & other) : counts{other.counts}, number{other.number}
+    {
+        ++counts->copies;
+    }
+    CountedPayload(CountedPayload && other) noexcept : counts{other.counts}, number{other.number}
+    {
+        ++counts->moves;
+    }
+    CountedPayload & operator=(CountedPayload const &) = default;
+    CountedPayload & operator=(CountedPayload &&) = default;
+};
 }  // namespace
 
 TEST_CASE("stdexec bridge normalizes inline success completions")
 {
     auto empty = run_sender(stdexec::just());
-    using empty_outcome = std::optional<std::expected<std::monostate, std::monostate>>;
+    using empty_outcome = fnfelt::Result<std::monostate, fnfelt::Infallible>;
     static_assert(std::is_same_v<decltype(empty), empty_outcome>);
     REQUIRE(empty.has_value());
-    CHECK(empty->has_value());
+    REQUIRE(empty->has_value());
 
     auto single = run_sender(stdexec::just(42));
+    static_assert(std::is_same_v<decltype(single), fnfelt::Result<int, fnfelt::Infallible>>);
     REQUIRE(single.has_value());
     REQUIRE(single->has_value());
     CHECK_EQ(**single, 42);
@@ -273,11 +300,19 @@ TEST_CASE("stdexec bridge preserves typed errors and stopped completion")
 {
     auto const error = std::make_error_code(std::errc::io_error);
     auto failed = run_sender(stdexec::just_error(error));
-    REQUIRE(failed.has_value());
-    REQUIRE_FALSE(failed->has_value());
-    CHECK_EQ(failed->error(), error);
+    static_assert(
+        std::is_same_v<decltype(failed), fnfelt::Result<std::monostate, std::error_code>>);
+    REQUIRE((failed && !failed->has_value()));
+    CHECK_EQ(failed.value().error().value, error);
 
-    CHECK_FALSE(run_sender(stdexec::just_stopped()).has_value());
+    auto flag = run_sender(stdexec::just_error(std::monostate{}));
+    static_assert(std::is_same_v<decltype(flag), fnfelt::Result<std::monostate, std::monostate>>);
+    CHECK(fnfelt::result::is_error(flag));
+
+    auto stopped = run_sender(stdexec::just_stopped());
+    static_assert(
+        std::is_same_v<decltype(stopped), fnfelt::Result<std::monostate, fnfelt::Infallible>>);
+    CHECK(stopped == std::nullopt);
 }
 
 TEST_CASE("stdexec bridge moves owned results")
@@ -286,6 +321,128 @@ TEST_CASE("stdexec bridge moves owned results")
     REQUIRE(result.has_value());
     REQUIRE(result->has_value());
     CHECK_EQ(***result, 42);
+}
+
+TEST_CASE("stdexec bridge permits expected construction tags as sender error data")
+{
+    auto in_place = run_sender(stdexec::just_error(std::in_place));
+    static_assert(
+        std::is_same_v<decltype(in_place), fnfelt::Result<std::monostate, std::in_place_t>>);
+    CHECK(fnfelt::result::is_error(in_place));
+
+    auto unexpect = run_sender(stdexec::just_error(std::unexpect));
+    static_assert(
+        std::is_same_v<decltype(unexpect), fnfelt::Result<std::monostate, std::unexpect_t>>);
+    CHECK(fnfelt::result::is_error(unexpect));
+
+    auto unexpected = run_sender(stdexec::just_error(std::unexpected{42}));
+    static_assert(
+        std::is_same_v<decltype(unexpected), fnfelt::Result<std::monostate, std::unexpected<int>>>);
+    REQUIRE(fnfelt::result::is_error(unexpected));
+    CHECK_EQ(fnfelt::result::get_error(unexpected).error(), 42);
+}
+
+TEST_CASE("stdexec bridge adopts completion storage with one payload move")
+{
+    using signatures = stdexec::completion_signatures<stdexec::set_value_t(CountedPayload const &)>;
+    PayloadCounts counts;
+    CountedPayload const payload{&counts, 42};
+    auto sender = test_sender<signatures>([&payload](auto receiver)
+                                          { stdexec::set_value(std::move(receiver), payload); });
+    constexpr auto inspect = []<class TSender>(
+                                 auto self, TSender source) -> lf::task<std::tuple<int, int, int>>
+    {
+        auto result = co_await await_sender(self.context(), std::move(source));
+        // Snapshot here: returning the Result through libfork or IO would add unrelated moves.
+        co_return std::tuple{
+            result.value().value().number,
+            result.value().value().counts->copies,
+            result.value().value().counts->moves};
+    };
+    auto const [number, copies, moves] =
+        fnfelt::monad::io::create_async(inspect, std::move(sender)).build().sync_wait();
+    CHECK_EQ(number, 42);
+    CHECK_EQ(copies, 1);
+    CHECK_EQ(moves, 1);
+}
+
+TEST_CASE("stdexec bridge preserves empty optional values and errors as data")
+{
+    auto success = run_sender(stdexec::just(std::optional<int>{}));
+    REQUIRE(success.has_value());
+    REQUIRE(success->has_value());
+    CHECK_FALSE(success.value().value().has_value());
+    CHECK_FALSE(success == std::nullopt);
+
+    auto failure = run_sender(stdexec::just_error(std::optional<int>{}));
+    REQUIRE((failure && !failure->has_value()));
+    CHECK_FALSE(failure.value().error().value.has_value());
+    CHECK_FALSE(failure == std::nullopt);
+}
+
+TEST_CASE("stdexec bridge promotes plain IO continuations without losing terminal outcomes")
+{
+    using signatures = stdexec::completion_signatures<
+        stdexec::set_value_t(int),
+        stdexec::set_error_t(std::error_code),
+        stdexec::set_stopped_t()>;
+    auto const error = std::make_error_code(std::errc::io_error);
+    for (int mode = 0; mode != 3; ++mode)
+    {
+        CAPTURE(mode);
+        int generic_invocations = 0;
+        int plain_io_invocations = 0;
+        int plain_value_invocations = 0;
+        auto source = test_sender<signatures>(
+            [mode, error](auto receiver)
+            {
+                if (mode == 0)
+                    stdexec::set_value(std::move(receiver), 40);
+                else if (mode == 1)
+                    stdexec::set_error(std::move(receiver), std::error_code{error});
+                else
+                    stdexec::set_stopped(std::move(receiver));
+            });
+        using expected_type = sender_outcome_t<decltype(source)>;
+        auto program = fnfelt::monad::io::create_async(await_action, std::move(source))
+                           .and_then(
+                               [&](auto value)
+                               {
+                                   static_assert(std::is_same_v<decltype(value), int>);
+                                   ++generic_invocations;
+                                   return fnfelt::monad::io::just(value + 1);
+                               })
+                           .and_then(
+                               [&](int value)
+                               {
+                                   ++plain_io_invocations;
+                                   return fnfelt::monad::io::just(value + 1);
+                               })
+                           .transform(
+                               [&](int value)
+                               {
+                                   ++plain_value_invocations;
+                                   return value;
+                               });
+        static_assert(std::is_same_v<typename decltype(program)::value_type, expected_type>);
+        auto result = program.build().sync_wait(lf::lazy_pool{2});
+        CHECK_EQ(generic_invocations, mode == 0 ? 1 : 0);
+        CHECK_EQ(plain_io_invocations, mode == 0 ? 1 : 0);
+        CHECK_EQ(plain_value_invocations, mode == 0 ? 1 : 0);
+        if (mode == 0)
+        {
+            REQUIRE(result.has_value());
+            REQUIRE(result->has_value());
+            CHECK_EQ(result.value().value(), 42);
+        }
+        else if (mode == 1)
+        {
+            REQUIRE((result && !result->has_value()));
+            CHECK_EQ(result.value().error().value, error);
+        }
+        else
+            CHECK(result == std::nullopt);
+    }
 }
 
 TEST_CASE("stdexec bridge resumes on its worker after foreign completion during start")
@@ -413,7 +570,7 @@ TEST_CASE("stdexec bridge accepts successful construction without noexcept decla
             test_sender<error_signatures>([&payload](auto receiver)
                                           { stdexec::set_error(std::move(receiver), payload); }));
         REQUIRE((result && !result->has_value()));
-        CHECK_EQ(result.value().error().live, &live);
+        CHECK_EQ(result.value().error().value.live, &live);
         CHECK_EQ(live, 2);
     }
     SUBCASE("successful value move during completion")
@@ -423,8 +580,8 @@ TEST_CASE("stdexec bridge accepts successful construction without noexcept decla
             test_sender<signatures>(
                 [&payload](auto receiver)
                 { stdexec::set_value(std::move(receiver), std::move(payload)); }));
-        REQUIRE((result && result->has_value()));
-        CHECK_EQ(result.value().value().live, &live);
+        REQUIRE(fnfelt::result::is_success(result));
+        CHECK_EQ(fnfelt::result::get_success(result).live, &live);
         CHECK_EQ(live, 2);
     }
     SUBCASE("successful error move during completion")
@@ -434,8 +591,8 @@ TEST_CASE("stdexec bridge accepts successful construction without noexcept decla
             test_sender<signatures>(
                 [&payload](auto receiver)
                 { stdexec::set_error(std::move(receiver), std::move(payload)); }));
-        REQUIRE((result && !result->has_value()));
-        CHECK_EQ(result.value().error().live, &live);
+        REQUIRE(fnfelt::result::is_error(result));
+        CHECK_EQ(fnfelt::result::get_error(result).live, &live);
         CHECK_EQ(live, 2);
     }
     CHECK_EQ(live, 1);
@@ -518,12 +675,13 @@ TEST_CASE("stdexec bridge deduplicates normalized alternatives without flattenin
                     }
                 }));
         using value_type = typename decltype(result)::value_type::value_type;
-        using error_type = typename decltype(result)::value_type::error_type;
+        using error_type = std::remove_cvref_t<decltype(result->error().value)>;
         static_assert(std::variant_size_v<value_type> == 4);
         static_assert(std::variant_size_v<error_type> == 2);
-        REQUIRE(result.has_value());
+        CHECK_FALSE(result == std::nullopt);
         if (mode < 7)
         {
+            REQUIRE(result.has_value());
             REQUIRE(result->has_value());
             if (mode < 2)
             {
@@ -544,14 +702,14 @@ TEST_CASE("stdexec bridge deduplicates normalized alternatives without flattenin
         }
         else
         {
-            REQUIRE_FALSE(result->has_value());
+            REQUIRE((result && !result->has_value()));
             if (mode == 8)
             {
-                CHECK_EQ(std::get<std::string>(result->error()), "failed");
+                CHECK_EQ(std::get<std::string>(result.value().error().value), "failed");
             }
             else
             {
-                CHECK_EQ(std::get<std::error_code>(result->error()), error);
+                CHECK_EQ(std::get<std::error_code>(result.value().error().value), error);
             }
         }
     }
@@ -566,9 +724,7 @@ TEST_CASE("stdexec bridge deduplicates normalized alternatives without flattenin
 
 TEST_CASE("stdexec bridge exposes an owned receiver environment supplied through ReaderIO")
 {
-    /**
-     * ReaderIO state carrying receiver properties through an asynchronous composition.
-     */
+    /// ReaderIO state carrying receiver properties through an asynchronous composition.
     struct Runtime
     {
         StopEnvironment receiver_environment;
@@ -589,7 +745,7 @@ TEST_CASE("stdexec bridge exposes an owned receiver environment supplied through
     CHECK_EQ(**result, 42);
 
     stop_source.request_stop();
-    CHECK_FALSE(program.build(runtime).sync_wait(lf::lazy_pool{2}).has_value());
+    CHECK(program.build(runtime).sync_wait(lf::lazy_pool{2}) == std::nullopt);
 
     auto default_result = run_sender(EnvironmentSender{});
     static_assert(
@@ -603,29 +759,21 @@ TEST_CASE("stdexec bridge diagnoses unsupported owned and direct channel types")
 {
     using fnfelt::interop::detail::validate_completion;
     using fnfelt::interop::detail::validate_expected_value;
-    /**
-     * Incomplete type fixture for rejecting completion arguments without a complete stored type.
-     */
+    /// Incomplete type fixture for rejecting completion arguments without a complete stored type.
     struct Incomplete;
-    /**
-     * Move-only type fixture for rejecting completion references that require copying.
-     */
+    /// Move-only type fixture for rejecting completion references that require copying.
     struct NoCopy
     {
         NoCopy(NoCopy const &) = delete;
         NoCopy(NoCopy &&) = default;
     };
-    /**
-     * Copy-only type fixture for rejecting completion values that cannot be moved.
-     */
+    /// Copy-only type fixture for rejecting completion values that cannot be moved.
     struct NoMove
     {
         NoMove(NoMove const &) = default;
         NoMove(NoMove &&) = delete;
     };
-    /**
-     * Payload fixture for rejecting completion values with potentially throwing destruction.
-     */
+    /// Payload fixture for rejecting completion values with potentially throwing destruction.
     struct ThrowingDestructor
     {
         ~ThrowingDestructor() noexcept(false) {}

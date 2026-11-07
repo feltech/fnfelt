@@ -38,7 +38,8 @@ template <class TTraits = detail::FanoutIOTraits<>, class... TFunctions>
     constexpr auto reason = TTraits::validate_fanout_factory(^^std::tuple<TFunctions...>);
     static_assert(
         reason.empty(),
-        detail::sequence_error_msg<^^std::tuple<TFunctions...>>(TTraits::name, reason));
+        detail::continuations_error_msg<^^std::tuple<TFunctions...>, ^^void, true>(
+            "fanout", TTraits::name, reason));
     if constexpr (reason.empty())
     {
         return detail::FanoutContinuation<TTraits, std::tuple<TFunctions...>>{

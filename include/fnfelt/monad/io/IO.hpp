@@ -93,6 +93,11 @@ public:
      * `std::pair` or `std::tuple` are spread into the continuation unless it accepts the value
      * directly.
      *
+     * A Result source exposes its successful payload; error and stop bypass the continuation.
+     * Once a source or continuation emits a Result, later plain results are promoted to success.
+     * Standard optional and expected values remain ordinary data. See io::and_then for error-domain
+     * joining and the distinction between mapping data and adopting another Result.
+     *
      * The continuation is taken by value and moved into the free `and_then` as an rvalue: lvalues
      * are copied into the parameter, and the caller's lvalue is left untouched. It must be a
      * complete, non-reference, move constructible class or function pointer type, callable as an
@@ -104,6 +109,7 @@ public:
      *
      * @tparam TAndThenTraits Traits used to validate this IO and continuation pair, and for the
      * result IO, defaulting to detail::AndThenIOTraits.
+     * @tparam TContinuation Continuation type.
      * @param self The IO instance to chain to (explicit object parameter).
      * @param continuation Continuation taking the value and returning an IO.
      * @return IO running this IO followed by the continuation's IO, or detail::AndThenError if the
@@ -122,6 +128,8 @@ public:
      * result IO takes `detail::AndThenIOTraits<name_cstr>`, which is also used to validate this IO
      * and the continuation pair.
      *
+     * @tparam name_cstr Diagnostic name with static storage duration.
+     * @tparam TContinuation Continuation type.
      * @param self The IO instance to chain to (explicit object parameter).
      * @param continuation Continuation taking the value and returning an IO.
      * @return IO running this IO followed by the continuation's IO with
@@ -135,6 +143,36 @@ public:
     }
 
     /**
+     * Recover Result errors while passing through success and stop.
+     *
+     * @tparam TOrElseTraits Validation and result traits.
+     * @tparam TContinuation Error recovery continuation type.
+     * @param self Deferred source IO.
+     * @param continuation Error-taking continuation returning an IO.
+     * @return Deferred recovered IO.
+     */
+    template <class TOrElseTraits = detail::OrElseIOTraits<>, class TContinuation>
+    [[nodiscard]] constexpr auto or_else(this auto && self, TContinuation continuation)
+    {
+        return io::or_else<TOrElseTraits>(FW(self), FW(continuation));
+    }
+
+    /**
+     * Recover Result errors, naming the returned IO.
+     *
+     * @tparam name_cstr Diagnostic name with static storage.
+     * @tparam TContinuation Error recovery continuation type.
+     * @param self Deferred source IO.
+     * @param continuation Error-taking continuation returning an IO.
+     * @return Named deferred recovered IO.
+     */
+    template <char const * name_cstr, class TContinuation>
+    [[nodiscard]] constexpr auto or_else(this auto && self, TContinuation continuation)
+    {
+        return io::or_else<name_cstr>(FW(self), FW(continuation));
+    }
+
+    /**
      * Transform this IO's value with a transformer, re-wrapping the plain result in an IO.
      *
      * The transformer takes the value this IO produces and returns a plain value; the returned IO
@@ -142,11 +180,16 @@ public:
      * `std::pair` or `std::tuple` are spread into the transformer unless it accepts the value
      * directly. Unlike `and_then`, the transformer's result is not run as an IO.
      *
+     * A Result source maps only its successful payload, preserving errors and stopping.
+     * A returned Result remains nested payload data; and_then adopts its channels.
+     * A successful void payload invokes the transformer without arguments.
+     *
      * An invalid transformer is rejected by a friendly static_assert and yields
      * `detail::TransformError`.
      *
      * @tparam TTransformTraits Traits used to validate this IO and transformer pair, and for the
      * result IO, defaulting to detail::TransformIOTraits.
+     * @tparam TTransformer Successful-payload mapper type.
      * @param self The IO instance to transform (explicit object parameter).
      * @param transformer Transformer taking the value and returning a plain value.
      * @return New IO that encapsulates the value after transformation, or detail::TransformError if
@@ -165,6 +208,8 @@ public:
      *
      * See the defaulted-traits member overload for the full contract, which is identical.
      *
+     * @tparam name_cstr Diagnostic name with static storage duration.
+     * @tparam TTransformer Successful-payload mapper type.
      * @param self The IO instance to transform (explicit object parameter).
      * @param transformer Transformer taking the value and returning a plain value.
      * @return New IO that encapsulates the value after transformation, or detail::TransformError if
@@ -179,9 +224,42 @@ public:
     }
 
     /**
+     * Map this Result's error while preserving success and stop.
+     *
+     * An Infallible error bypasses mapper invocation and return-type inference.
+     *
+     * @tparam TTransformErrorTraits Validation and result traits.
+     * @tparam TTransformer Error mapper type.
+     * @param self Deferred Result IO.
+     * @param transformer Pure error mapper.
+     * @return Deferred IO with its mapped error domain.
+     */
+    template <class TTransformErrorTraits = detail::TransformErrorIOTraits<>, class TTransformer>
+    [[nodiscard]] constexpr auto transform_error(this auto && self, TTransformer transformer)
+    {
+        return io::transform_error<TTransformErrorTraits>(FW(self), FW(transformer));
+    }
+
+    /**
+     * Map this Result's error, naming the returned IO.
+     *
+     * @tparam name_cstr Diagnostic name with static storage.
+     * @tparam TTransformer Error mapper type.
+     * @param self Deferred Result IO.
+     * @param transformer Pure error mapper.
+     * @return Named deferred IO with its mapped error domain.
+     */
+    template <char const * name_cstr, class TTransformer>
+    [[nodiscard]] constexpr auto transform_error(this auto && self, TTransformer transformer)
+    {
+        return io::transform_error<name_cstr>(FW(self), FW(transformer));
+    }
+
+    /**
      * Complete this expected result with a conditional fallback effect.
      *
      * @tparam TSelectTraits Validation and result traits.
+     * @tparam TFallback Fallback IO argument type.
      * @param self Choice IO.
      * @param fallback IO producing a function for the unexpected input.
      * @return Selective IO.
@@ -196,6 +274,7 @@ public:
      * Complete this expected result with a named conditional fallback effect.
      *
      * @tparam name_cstr Diagnostic name with static storage duration.
+     * @tparam TFallback Fallback IO argument type.
      * @param self Choice IO.
      * @param fallback IO producing a function for the unexpected input.
      * @return Named selective IO.
@@ -228,6 +307,8 @@ public:
      *
      * @tparam TRepeatUntilTraits Traits used to validate this IO and the state and stepper
      * combination, and for the result IO, defaulting to detail::RepeatUntilIOTraits.
+     * @tparam TInitialState Loop state type.
+     * @tparam TStepper Loop stepper type.
      * @param self The IO instance to repeat (explicit object parameter).
      * @param initial_state Initial state threaded into the stepper.
      * @param stepper Stepper taking the state and value, returning an expected.
@@ -253,6 +334,9 @@ public:
      * result IO takes `detail::RepeatUntilIOTraits<name_cstr>`, which is also used to validate this
      * IO and the state and stepper combination.
      *
+     * @tparam name_cstr Diagnostic name with static storage duration.
+     * @tparam TInitialState Loop state type.
+     * @tparam TStepper Loop stepper type.
      * @param self The IO instance to repeat (explicit object parameter).
      * @param initial_state Initial state threaded into the stepper.
      * @param stepper Stepper taking the state and value, returning an expected.
@@ -270,6 +354,8 @@ public:
     /**
      * Discard this IO's complete value and run the next computation.
      *
+     * @tparam TTapTraits Validation and result traits.
+     * @tparam TNext Next IO type.
      * @param self Source IO.
      * @param next Next IO.
      * @return IO producing the next value.
@@ -283,6 +369,8 @@ public:
     /**
      * Discard this value, run the next IO and name the result.
      *
+     * @tparam name_cstr Diagnostic name with static storage duration.
+     * @tparam TNext Next IO type.
      * @param self Source IO.
      * @param next Next IO.
      * @return Named IO producing the next value.

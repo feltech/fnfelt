@@ -25,6 +25,7 @@
 #include <fnfelt/monad/io/detail/async.hpp>
 #include <fnfelt/monad/io/detail/create.hpp>
 #include <fnfelt/monad/io/fwd.hpp>
+#include <fnfelt/result.hpp>
 
 #include <fnfelt/macros_push.hpp>
 
@@ -263,6 +264,14 @@ struct SelectIOTraits : CreateIOTraits<name_cstr>
         if (!is_io(fallback_meta))
         {
             return "fallback source is not an IO";
+        }
+        for (auto const result_meta : {io_value_meta(choice_meta), io_value_meta(fallback_meta)})
+        {
+            if (auto const reason = fnfelt::detail::ResultTypeInfo::from(result_meta).validate();
+                !reason.empty())
+            {
+                return reason;
+            }
         }
         return validate_select_values(io_value_meta(choice_meta), io_value_meta(fallback_meta));
     }

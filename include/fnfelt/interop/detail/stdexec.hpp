@@ -15,18 +15,18 @@
  * A sender may advertise multiple value and error completion signatures. Each started operation
  * completes exactly once through one of these calls.
  *
- * In the general case, all possible supported completion signatures are packaged as
- * optional<expected<variant<tuple>, variant>>.
+ * Completion signatures determine the owned value and error alternatives in
+ * Result<TSuccessPayload, TErrorPayload>. Distinct alternatives
+ * use variants; successful completions with multiple arguments use tuples.
  *
- * In the special (but common) case of single overloads with a single value, this can reduce to
- * optional<expected<value, error>>.
- *
- * The outer optional represents "stopped", i.e no result when unset.
+ * A disengaged Result represents stopped completion. Its Error payload contains the sender's
+ * error. Constructing owned completion arguments must not throw; an exception terminates execution.
  */
 #pragma once
 
 #include <meta>
 
+#include <cassert>
 #include <expected>
 #include <functional>
 #include <initializer_list>
@@ -42,13 +42,17 @@
 #include <libfork/core/ext/handles.hpp>
 #include <stdexec/execution.hpp>
 
+#include <fnfelt/result.hpp>
+
 namespace fnfelt::interop::detail
 {
 /**
  * Validate whether completion arguments can be stored by value across suspension.
  *
  * Produces diagnostics for arguments that cannot be retained, moved, or safely destroyed.
- * Returns an empty string on success, otherwise a diagnostic.
+ *
+ * @param source Advertised completion argument type.
+ * @return Empty on success, otherwise a diagnostic.
  */
 inline constexpr auto validate_completion = [](std::meta::info source) consteval -> std::string_view
 {
@@ -77,6 +81,9 @@ inline constexpr auto validate_completion = [](std::meta::info source) consteval
  *
  * Provides a by-value representation of an advertised completion argument, with an injectable
  * validator for testing diagnostics.
+ *
+ * @tparam TArg Advertised completion argument type.
+ * @tparam validator Compile-time storage validation callable.
  */
 template <class TArg, auto validator = validate_completion>
 struct CompletionArgument
@@ -89,6 +96,8 @@ struct CompletionArgument
  * Tuple representation of a successful completion with multiple arguments.
  *
  * Retains each argument as a validated decayed value so the completion has one storable result.
+ *
+ * @tparam TArgs Advertised successful completion argument types.
  */
 template <class... TArgs>
 struct CompletionValue
@@ -101,6 +110,8 @@ struct CompletionValue
  * Direct value representation of a successful completion with one argument.
  *
  * Avoids a single-element tuple while retaining the argument's validated decayed type.
+ *
+ * @tparam TArg Advertised successful completion argument type.
  */
 template <class TArg>
 struct CompletionValue<TArg>
@@ -119,7 +130,11 @@ struct CompletionValue<>
     using type = std::monostate;  ///< Empty success value.
 };
 
-/// Owned value corresponding to a completion's arguments.
+/**
+ * Owned value corresponding to a completion's arguments.
+ *
+ * @tparam TArgs Advertised successful completion argument types.
+ */
 template <class... TArgs>
 using completion_value_t = CompletionValue<TArgs...>::type;
 
@@ -158,15 +173,30 @@ consteval std::meta::info alternative_meta(std::initializer_list<std::meta::info
     return substitute(^^std::variant, unique);
 }
 
-/// Validated decayed type or variant of distinct alternatives.
+/**
+ * Validated decayed type or variant of distinct alternatives.
+ *
+ * @tparam TTypes Advertised completion alternatives.
+ */
 template <class... TTypes>
 using alternatives_t = [:alternative_meta({^^typename CompletionArgument<TTypes>::type...}):];
+
+/**
+ * Owned sender error alternatives, with no error represented by Infallible.
+ *
+ * @tparam TTypes Advertised error completion argument types.
+ */
+template <class... TTypes>
+using error_alternatives_t =
+    std::conditional_t<sizeof...(TTypes) == 0, fnfelt::Infallible, alternatives_t<TTypes...>>;
 
 /**
  * Validate a normalized channel's eligibility as the value type of std::expected.
  *
  * Provides an adapter diagnostic for reserved direct payload types before result storage is formed.
- * Returns an empty string on success, otherwise a diagnostic.
+ *
+ * @param value Normalized channel type.
+ * @return Empty on success, otherwise a diagnostic.
  */
 inline constexpr auto validate_expected_value = [](std::meta::info value)
                                                     consteval -> std::string_view
@@ -186,6 +216,10 @@ inline constexpr auto validate_expected_value = [](std::meta::info value)
  *
  * Provides normalized success and error alternatives for an rvalue sender with a const-reference
  * environment, including validation of the types used in the materialized outcome.
+ *
+ * @tparam TSender Owned sender type.
+ * @tparam TEnvironment Owned receiver environment type.
+ * @tparam validator Compile-time normalized-channel validation callable.
  */
 template <class TSender, class TEnvironment, auto validator = validate_expected_value>
 struct SenderTypes
@@ -194,20 +228,47 @@ struct SenderTypes
     using value_type = stdexec::
         value_types_of_t<TSender &&, TEnvironment const &, completion_value_t, alternatives_t>;
     /// Owned sender error alternatives.
-    using error_type = stdexec::error_types_of_t<TSender &&, TEnvironment const &, alternatives_t>;
+    using error_type =
+        stdexec::error_types_of_t<TSender &&, TEnvironment const &, error_alternatives_t>;
     static_assert(validator(^^value_type).empty(), validator(^^value_type));
-    static_assert(validator(^^error_type).empty(), validator(^^error_type));
 
 private:
     // Avoid cascading standard-library errors after reporting a rejected channel type.
     using safe_value_type =
         std::conditional_t<validator(^^value_type).empty(), value_type, std::monostate>;
-    using safe_error_type =
-        std::conditional_t<validator(^^error_type).empty(), error_type, std::monostate>;
 
 public:
-    /// Materialized terminal completion.
-    using outcome_type = std::optional<std::expected<safe_value_type, safe_error_type>>;
+    /// Private slot, disengaged before completion or after stopped completion.
+    using storage_type = fnfelt::Result<safe_value_type, error_type>;
+    /// Public result with stopped, success and opaque error alternatives.
+    using outcome_type = storage_type;
+};
+
+/**
+ * Deferred conversion that constructs a factory result directly in its destination.
+ *
+ * Supports in-place construction without a move from an already constructed temporary.
+ *
+ * @tparam TFactory Deferred construction callable type.
+ */
+template <class TFactory>
+struct FromFactory
+{
+    TFactory factory;  ///< Deferred construction callable.
+
+    using result_type = std::invoke_result_t<TFactory &&>;  ///< Constructed object type.
+
+    /**
+     * Construct the deferred result.
+     *
+     * @return Factory result.
+     */
+    // Implicit conversion lets in-place construction adopt an immovable factory result.
+    // ReSharper disable once CppNonExplicitConversionOperator
+    constexpr operator result_type() && noexcept(std::is_nothrow_invocable_v<TFactory &&>)
+    {
+        return std::invoke(std::move(factory));
+    }
 };
 
 /**
@@ -215,6 +276,9 @@ public:
  *
  * Retains the receiver environment and terminal outcome, and identifies the libfork continuation
  * and originating worker for completion handoff. Must remain alive until completion is published.
+ *
+ * @tparam TSender Owned sender type.
+ * @tparam TEnvironment Owned receiver environment type.
  */
 template <class TSender, class TEnvironment>
 struct BridgeState
@@ -225,16 +289,18 @@ struct BridgeState
     using error_type = types::error_type;              ///< Owned error alternatives.
     using outcome_type = types::outcome_type;          ///< Materialized completion.
 
-    TEnvironment environment;             ///< Properties exposed to the sender.
-    outcome_type outcome;                 ///< Result inspected only after completion.
-    lf::worker_context * return_context;  ///< Originating libfork worker.
-    lf::submit_handle continuation{};     ///< Suspended task's submission handle.
+    TEnvironment environment;              ///< Properties exposed to the sender.
+    typename types::storage_type outcome;  ///< Result inspected only after completion.
+    lf::worker_context * return_context;   ///< Originating libfork worker.
+    lf::submit_handle continuation{};      ///< Suspended task's submission handle.
 
     /**
      * Record completion and make the suspended task runnable.
      *
-     * Constructing owned completion values and errors must not throw; an exception terminates.
+     * Constructing owned completion arguments must not throw; an exception terminates execution.
      *
+     * @tparam TTag Completion channel tag type.
+     * @tparam TArgs Completion argument types.
      * @param tag Completion channel.
      * @param args Completion arguments.
      */
@@ -274,15 +340,23 @@ private:
     void store(stdexec::set_error_t, TError && error)
     {
         using alternative_type = std::decay_t<TError>;
-        if constexpr (std::is_same_v<error_type, alternative_type>)
-        {
-            outcome.emplace(std::unexpect, std::forward<TError>(error));
-        }
-        else
-        {
-            outcome.emplace(
-                std::unexpect, std::in_place_type<alternative_type>, std::forward<TError>(error));
-        }
+        // Error wraps even reserved expected error types, such as unexpected<T>, as data.
+        // Deferred aggregate construction also avoids an extra move of a variant payload.
+        outcome.emplace(
+            std::unexpect,
+            FromFactory{
+                [&error]() -> fnfelt::Error<error_type>
+                {
+                    if constexpr (std::is_same_v<error_type, alternative_type>)
+                    {
+                        return {std::forward<TError>(error)};
+                    }
+                    else
+                    {
+                        return {error_type{
+                            std::in_place_type<alternative_type>, std::forward<TError>(error)}};
+                    }
+                }});
     }
 
     void store(stdexec::set_stopped_t) noexcept
@@ -296,6 +370,8 @@ private:
  *
  * Exposes the stored execution properties and makes the suspended libfork task runnable on
  * completion. The bridge storage must remain valid until that completion is published.
+ *
+ * @tparam TState Bridge storage type.
  */
 template <class TState>
 struct Receiver
@@ -317,6 +393,7 @@ struct Receiver
     /**
      * Deliver successful completion.
      *
+     * @tparam TValues Successful completion argument types.
      * @param values Successful result arguments.
      */
     template <class... TValues>
@@ -328,6 +405,7 @@ struct Receiver
     /**
      * Deliver failed completion.
      *
+     * @tparam TError Sender error argument type.
      * @param error Sender's error argument.
      */
     template <class TError>
@@ -344,37 +422,14 @@ struct Receiver
 };
 
 /**
- * Deferred conversion that constructs a factory result directly in its destination.
- *
- * Useful with std::optional::emplace for non-movable types returned by a factory, avoiding a move
- * from an already constructed temporary.
- */
-template <class TFactory>
-struct FromFactory
-{
-    TFactory factory;  ///< Deferred construction callable.
-
-    using result_type = std::invoke_result_t<TFactory &&>;  ///< Constructed object type.
-
-    /**
-     * Construct the deferred result.
-     *
-     * @return Factory result.
-     */
-    // Implicit conversion lets optional::emplace construct an immovable factory result.
-    // ReSharper disable once CppNonExplicitConversionOperator
-    constexpr operator result_type() && noexcept(std::is_nothrow_invocable_v<TFactory &&>)
-    {
-        return std::invoke(std::move(factory));
-    }
-};
-
-/**
  * Libfork awaitable that materializes a sender's terminal outcome.
  *
  * Owns the sender, receiver environment, and connected operation without a separate bridge
  * allocation. Movable only before connection; must be immediately awaited with the current
  * libfork worker context so its connected operation remains at a stable address.
+ *
+ * @tparam TSender Owned sender type.
+ * @tparam TEnvironment Owned receiver environment type.
  */
 template <class TSender, class TEnvironment>
 class SenderAwaiter
@@ -390,6 +445,8 @@ public:
     /**
      * Own the operation's inputs before connecting it.
      *
+     * @tparam TSource Forwarded sender type.
+     * @tparam TSourceEnvironment Forwarded receiver environment type.
      * @param current Originating libfork worker.
      * @param source Sender to consume.
      * @param environment Receiver query properties.
@@ -473,6 +530,8 @@ public:
      */
     auto await_resume() -> state_type::outcome_type
     {
+        // Storage already has the public Result shape. Moving it adopts the payload once;
+        // the original slot and operation remain owned if that move throws.
         return std::move(bridge_state_.outcome);
     }
 };

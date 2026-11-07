@@ -36,6 +36,7 @@ target_sources(
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/fwd.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/and_then.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/or_else.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/ap.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/async.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/create.hpp
@@ -44,6 +45,7 @@ target_sources(
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/repeat_until.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/sequence.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/transform.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/transform_error.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/select.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/traverse.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/just.hpp
@@ -55,8 +57,10 @@ target_sources(
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/detail/tap.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/repeat_until.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/transform.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/transform_error.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/select.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/and_then.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/or_else.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/ap.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/async.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/create.hpp
@@ -193,8 +197,10 @@ if(${PROJECT_NAME}_ENABLE_DEV)
     monad/io/fanout.cpp
     monad/io/tap.cpp
     monad/io/and_then.cpp
+    monad/io/result.cpp
     monad/io/repeat_until.cpp
     monad/io/transform.cpp
+    monad/io/transform_error.cpp
     monad/io/select.cpp
     monad/io/create.cpp
     monad/io/ap.cpp

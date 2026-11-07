@@ -26,6 +26,7 @@
 #include <fnfelt/monad/io/detail/async.hpp>
 #include <fnfelt/monad/io/detail/create.hpp>
 #include <fnfelt/monad/io/fwd.hpp>
+#include <fnfelt/result.hpp>
 
 #include <fnfelt/macros_push.hpp>
 
@@ -235,6 +236,10 @@ constexpr std::string_view maybe_repeat_until_result_name()
         constexpr std::meta::info source_value_meta = io_value_meta(source_meta);
         if constexpr (
             is_type(source_value_meta) && !is_void_type(source_value_meta) &&
+            fnfelt::detail::ResultTypeInfo::from(source_value_meta).validate().empty() &&
+            fnfelt::detail::ResultTypeInfo::from(declared_function_result_meta(stepper_meta))
+                .validate()
+                .empty() &&
             is_complete_type(source_value_meta))
         {
             if constexpr (is_invocable_type(receiver_meta, {state_arg_meta, source_value_meta}))
@@ -486,6 +491,11 @@ struct RepeatUntilIOTraits : CreateIOTraits<name_cstr>
             return "source IO is not an IO";
         }
         auto const source_value_meta = detail::io_value_meta(io_meta);
+        if (auto const reason = fnfelt::detail::ResultTypeInfo::from(source_value_meta).validate();
+            !reason.empty())
+        {
+            return reason;
+        }
         if (is_void_type(source_value_meta))
         {
             return "source IO produces no value";
@@ -536,12 +546,24 @@ struct RepeatUntilIOTraits : CreateIOTraits<name_cstr>
             return "stepper function must be move constructible";
         }
         std::meta::info const receiver_meta = add_lvalue_reference(stepper_meta);
+        if (auto const reason =
+                fnfelt::detail::ResultTypeInfo::from(declared_function_result_meta(stepper_meta))
+                    .validate();
+            !reason.empty())
+        {
+            return reason;
+        }
         if (!is_invocable_type(receiver_meta, {state_meta, source_value_meta}))
         {
             return "stepper function does not accept the state and value";
         }
         std::meta::info const result_meta =
             dealias(invoke_result(receiver_meta, {state_meta, source_value_meta}));
+        if (auto const reason = fnfelt::detail::ResultTypeInfo::from(result_meta).validate();
+            !reason.empty())
+        {
+            return reason;
+        }
         if (!has_template_arguments(result_meta) || template_of(result_meta) != ^^std::expected ||
             template_arguments_of(result_meta).size() != 2)
         {

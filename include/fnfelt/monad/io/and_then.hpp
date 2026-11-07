@@ -38,6 +38,16 @@ namespace fnfelt::monad::io
  * continuation's IO. Values that are specialisations of `std::pair` or `std::tuple` are spread
  * into the continuation unless it accepts the value directly.
  *
+ * A Result source passes its successful payload to the continuation, including generic
+ * continuations. Error or skip bypasses the continuation. Ordinary optional and expected values
+ * are data, including when stored inside a Result payload or error.
+ *
+ * Plain chains stay plain until a source or continuation produces a Result. Subsequent plain
+ * results are promoted to successful Results. Infallible contributes no error domain. Coexisting
+ * real errors require the same type; use transform_error to align different domains explicitly.
+ * Result<void, E> success invokes a nullary continuation. Stopping is represented only by the
+ * outer optional's disengagement, independently of thrown exceptions or scheduler cancellation.
+ *
  * The continuation must be a complete, non-reference, move constructible class or function pointer
  * type, callable as an rvalue with the source's value (directly or spread), and must return an IO
  * that produces a value. An invalid pair (including a non-IO source) is rejected by a friendly
