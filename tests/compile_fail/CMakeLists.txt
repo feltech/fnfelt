@@ -69,3 +69,4 @@ endfunction()
 
 add_subdirectory(interop)
 add_subdirectory(monad)
+add_subdirectory(result)

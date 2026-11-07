@@ -25,10 +25,12 @@ target_sources(
          ${PROJECT_SOURCE_DIR}/include/fnfelt/interop/stdexec.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/interop/detail/stdexec.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/static_string.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/result.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/macros_push.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/macros_pop.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/detail/callable_shape.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/detail/invocability.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/detail/result.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/detail/type_names.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/io/fwd.hpp
@@ -179,6 +181,7 @@ if(${PROJECT_NAME}_ENABLE_DEV)
   add_executable(
     ${PROJECT_NAME}.main
     main.cpp
+    result.cpp
     interop/stdexec.cpp
     detail/callable_shape.cpp
     detail/invocability.cpp
