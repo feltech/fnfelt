@@ -33,6 +33,9 @@ namespace fnfelt::monad::reader_io
  * applies the continuation to the source IO's produced value, then invokes the continuation's
  * ReaderIO with a second copy of the same state. Values that are specialisations of `std::pair`
  * or `std::tuple` are spread into the continuation unless it accepts the value directly.
+ * A Result source passes its successful payload (or no argument for void), preserving errors
+ * and stops without invoking the continuation. Plain sources adopt a continuation's first Result
+ * layer; incompatible error domains require transform_error before composition.
  *
  * The continuation must be a complete, non-reference, move constructible class or function
  * pointer type, callable as an rvalue with the source's produced value, and must return a ReaderIO

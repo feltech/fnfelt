@@ -11,6 +11,7 @@
 
 #include <meta>
 
+#include <functional>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -19,6 +20,7 @@
 #include <fnfelt/detail/callable_shape.hpp>
 #include <fnfelt/detail/invocability.hpp>
 #include <fnfelt/detail/type_names.hpp>
+#include <fnfelt/result.hpp>
 // The action delegates the composition to the inner IO's and_then, whose definition (and the IO
 // member's deduction target) is required here.
 #include <fnfelt/monad/io/IO.hpp>
@@ -58,15 +60,19 @@ struct AndThenError
  * @tparam continuation_meta Reflection of the (decayed) continuation type.
  * @param name Display name of the resulting ReaderIO (from traits).
  * @param reason Validation failure reason from `TTraits::validate_and_then`.
+ * @param operation Composition operation shown in the diagnostic.
  * @return Formatted error message string.
  */
 template <std::meta::info source_meta, std::meta::info continuation_meta>
-consteval std::string and_then_error_msg(std::string_view name, std::string_view reason)
+consteval std::string and_then_error_msg(
+    std::string_view name, std::string_view reason, std::string_view operation = "and_then")
 {
     std::string msg;
     msg += "fnfelt: ";
     fnfelt::detail::append_string_view(msg, name);
-    msg += " and_then error: ";
+    msg += ' ';
+    fnfelt::detail::append_string_view(msg, operation);
+    msg += " error: ";
     fnfelt::detail::append_string_view(msg, name);
     msg += '{';
     fnfelt::detail::append_string_view(msg, maybe_reader_io_name<source_meta>());
@@ -106,6 +112,17 @@ struct BoundContinuation
         return fnfelt::detail::invoke_dispatch(FW(self).continuation, FW(value))
             .build(FW(self).state)
             .io();
+    }
+
+    /**
+     * Bind a continuation after a successful void Result.
+     *
+     * @param self Bound continuation to invoke.
+     * @return Materialised inner IO.
+     */
+    constexpr auto operator()(this auto && self)
+    {
+        return std::invoke(FW(self).continuation).build(FW(self).state).io();
     }
 };
 
@@ -185,6 +202,11 @@ struct AndThenReaderIOTraits : CreateReaderIOTraits<name_cstr>
             return "state must be copy constructible";
         }
         std::meta::info const source_value_meta = detail::reader_io_value_meta(source_meta);
+        auto const source_result_info = fnfelt::detail::ResultTypeInfo::from(source_value_meta);
+        if (auto const reason = source_result_info.validate(); !reason.empty())
+        {
+            return reason;
+        }
         if (is_void_type(source_value_meta))
         {
             return "source ReaderIO produces no value";
@@ -203,12 +225,13 @@ struct AndThenReaderIOTraits : CreateReaderIOTraits<name_cstr>
                 break;
         }
         std::meta::info const continuation_meta_bare = dealias(remove_cvref(continuation_meta));
-        if (!fnfelt::detail::is_dispatch_invocable(continuation_meta_bare, source_value_meta))
+        auto const continuation_info = fnfelt::detail::SuccessContinuationInfo::from(
+            continuation_meta_bare, source_value_meta);
+        if (!continuation_info.is_valid)
         {
             return "continuation function does not accept the source ReaderIO's value";
         }
-        std::meta::info const result_meta =
-            fnfelt::detail::dispatch_result_meta(continuation_meta_bare, source_value_meta);
+        std::meta::info const result_meta = continuation_info.result_meta;
         if (!detail::is_reader_io(result_meta))
         {
             return "continuation function must return a ReaderIO";
@@ -217,11 +240,19 @@ struct AndThenReaderIOTraits : CreateReaderIOTraits<name_cstr>
         {
             return "continuation function must return a ReaderIO with the same state type";
         }
-        if (is_void_type(detail::reader_io_value_meta(result_meta)))
+        auto const result_value_meta = detail::reader_io_value_meta(result_meta);
+        if (is_void_type(result_value_meta))
         {
             return "continuation function must return a ReaderIO that produces a value";
         }
-        return {};
+        auto const result_type_info = fnfelt::detail::ResultTypeInfo::from(result_value_meta);
+        if (auto const reason = result_type_info.validate(); !reason.empty())
+        {
+            return reason;
+        }
+        return fnfelt::detail::ResultTypeInfo::from(source_value_meta, continuation_info.is_result)
+            .merge(result_type_info)
+            .validate();
     }
 };
 }  // namespace detail

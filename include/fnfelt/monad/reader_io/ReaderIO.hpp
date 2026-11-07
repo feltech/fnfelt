@@ -247,6 +247,68 @@ public:
     }
 
     /**
+     * Recover a reported error using the same environment.
+     *
+     * @tparam TOrElseTraits Validation and result traits.
+     * @tparam TContinuation Recovery callable type.
+     * @param self Source reader.
+     * @param continuation Error-taking ReaderIO continuation.
+     * @return Recovered reader.
+     */
+    template <class TOrElseTraits = detail::OrElseReaderIOTraits<>, class TContinuation>
+    [[nodiscard]] constexpr auto or_else(this auto && self, TContinuation continuation)
+    {
+        return reader_io::or_else<TOrElseTraits>(FW(self), FW(continuation));
+    }
+
+    /**
+     * Recover a reported error, naming the result.
+     *
+     * @tparam name_cstr Diagnostic name with static storage duration.
+     * @tparam TContinuation Recovery callable type.
+     * @param self Source reader.
+     * @param continuation Error-taking ReaderIO continuation.
+     * @return Named recovered reader.
+     */
+    template <char const * name_cstr, class TContinuation>
+    [[nodiscard]] constexpr auto or_else(this auto && self, TContinuation continuation)
+    {
+        return reader_io::or_else<name_cstr>(FW(self), FW(continuation));
+    }
+
+    /**
+     * Map a reported error while preserving success and stop.
+     *
+     * @tparam TTransformErrorTraits Validation and result traits.
+     * @tparam TTransformer Error mapper type.
+     * @param self Source reader.
+     * @param transformer Pure error mapper.
+     * @return Reader with the mapped error type.
+     */
+    template <
+        class TTransformErrorTraits = detail::TransformErrorReaderIOTraits<>,
+        class TTransformer>
+    [[nodiscard]] constexpr auto transform_error(this auto && self, TTransformer transformer)
+    {
+        return reader_io::transform_error<TTransformErrorTraits>(FW(self), FW(transformer));
+    }
+
+    /**
+     * Map a reported error, naming the result.
+     *
+     * @tparam name_cstr Diagnostic name with static storage duration.
+     * @tparam TTransformer Error mapper type.
+     * @param self Source reader.
+     * @param transformer Pure error mapper.
+     * @return Named reader with the mapped error type.
+     */
+    template <char const * name_cstr, class TTransformer>
+    [[nodiscard]] constexpr auto transform_error(this auto && self, TTransformer transformer)
+    {
+        return reader_io::transform_error<name_cstr>(FW(self), FW(transformer));
+    }
+
+    /**
      * Complete this expected result with a conditional reader effect.
      *
      * @tparam TSelectTraits Validation and result traits.

@@ -80,12 +80,12 @@ consteval std::meta::info reader_io_action_meta(std::meta::info reader_io_meta)
 template <std::meta::info reader_io_meta>
 constexpr std::string_view maybe_reader_io_name()
 {
-    // Guarded like `is_reader_io`'s members: the member splice requires the specialization to be
-    // complete, so diagnostics over pre-validation or declared-only reflections stay well-formed.
-    if constexpr (
-        is_reader_io(reader_io_meta) && is_complete_type(dealias(remove_cvref(reader_io_meta))))
+    if constexpr (is_reader_io(reader_io_meta))
     {
-        return [:reader_io_meta:] ::traits::name;
+        // Naming must not complete a reader whose action is itself the validation failure.
+        constexpr auto traits_meta =
+            template_arguments_of(dealias(remove_cvref(reader_io_meta)))[2];
+        return [:traits_meta:] ::name;
     }
 
     return "<unknown>";

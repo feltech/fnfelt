@@ -18,6 +18,7 @@
 #include <fnfelt/detail/type_names.hpp>
 #include <fnfelt/monad/io/detail.hpp>
 #include <fnfelt/monad/io/detail/create.hpp>
+#include <fnfelt/result.hpp>
 // The definitions backing `fnfelt::monad::io::detail::io_value_meta` (which calls `action_is_async`
 // from) live in async.hpp; including only io's detail.hpp would hard-error with "action_is_async
 // used before its definition".
@@ -306,7 +307,13 @@ struct CreateReaderIOTraits
         {
             return "provided action does not return an IO";
         }
-        if (is_void_type(io::detail::io_value_meta(result_meta)))
+        auto const value_meta = io::detail::io_value_meta(result_meta);
+        if (auto const reason = fnfelt::detail::ResultTypeInfo::from(value_meta).validate();
+            !reason.empty())
+        {
+            return reason;
+        }
+        if (is_void_type(value_meta))
         {
             return "provided action returns an IO that produces no value";
         }

@@ -58,15 +58,19 @@ struct TransformError
  * @tparam transformer_meta Reflection of the (decayed) transformer type.
  * @param name Display name of the resulting ReaderIO (from traits).
  * @param reason Validation failure reason from `TTraits::validate_transform`.
+ * @param operation Mapping operation shown in the diagnostic.
  * @return Formatted error message string.
  */
 template <std::meta::info source_meta, std::meta::info transformer_meta>
-consteval std::string transform_error_msg(std::string_view name, std::string_view reason)
+consteval std::string transform_error_msg(
+    std::string_view name, std::string_view reason, std::string_view operation = "transform")
 {
     std::string msg;
     msg += "fnfelt: ";
     fnfelt::detail::append_string_view(msg, name);
-    msg += " transform error: ";
+    msg += ' ';
+    fnfelt::detail::append_string_view(msg, operation);
+    msg += " error: ";
     fnfelt::detail::append_string_view(msg, name);
     msg += '{';
     fnfelt::detail::append_string_view(msg, maybe_reader_io_name<source_meta>());

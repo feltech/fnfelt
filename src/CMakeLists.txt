@@ -82,6 +82,10 @@ target_sources(
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/create.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/detail/and_then.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/and_then.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/or_else.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/detail/or_else.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/transform_error.hpp
+         ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/detail/transform_error.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/detail/transform.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/detail/select.hpp
          ${PROJECT_SOURCE_DIR}/include/fnfelt/monad/reader_io/transform.hpp
@@ -219,6 +223,7 @@ if(${PROJECT_NAME}_ENABLE_DEV)
     monad/reader_io/traits.cpp
     monad/reader_io/create.cpp
     monad/reader_io/and_then.cpp
+    monad/reader_io/result.cpp
     monad/reader_io/transform.cpp
     monad/reader_io/select.cpp
     monad/reader_io/ap.cpp

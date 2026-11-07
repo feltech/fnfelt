@@ -49,6 +49,12 @@ struct LiftReaderIOTraits;
 template <char const * name_cstr = detail::default_reader_io_name>
 struct AndThenReaderIOTraits;
 
+template <char const * name_cstr = detail::default_reader_io_name>
+struct OrElseReaderIOTraits;
+
+template <char const * name_cstr = detail::default_reader_io_name>
+struct TransformErrorReaderIOTraits;
+
 /// Traits validating the source ReaderIO and transformer function provided to
 /// `reader_io::transform`.
 template <char const * name_cstr = detail::default_reader_io_name>
@@ -99,6 +105,18 @@ template <class TTraits = detail::AndThenReaderIOTraits<>, class TSource, class 
 
 template <char const * name_cstr, class TSource, class TContinuation>
 [[nodiscard]] constexpr auto and_then(TSource && source, TContinuation && continuation);
+
+template <class TTraits = detail::OrElseReaderIOTraits<>, class TSource, class TContinuation>
+[[nodiscard]] constexpr auto or_else(TSource && source, TContinuation && continuation);
+
+template <char const * name_cstr, class TSource, class TContinuation>
+[[nodiscard]] constexpr auto or_else(TSource && source, TContinuation && continuation);
+
+template <class TTraits = detail::TransformErrorReaderIOTraits<>, class TSource, class TTransformer>
+[[nodiscard]] constexpr auto transform_error(TSource && source, TTransformer && transformer);
+
+template <char const * name_cstr, class TSource, class TTransformer>
+[[nodiscard]] constexpr auto transform_error(TSource && source, TTransformer && transformer);
 
 // Forward declarations for the free transform functions; defined and documented in transform.hpp.
 // The source ReaderIO is taken by forwarding reference so rvalue chains move and lvalues are

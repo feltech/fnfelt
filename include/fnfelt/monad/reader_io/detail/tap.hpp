@@ -38,10 +38,10 @@ struct NextContinuation
      * Discard the complete source value.
      *
      * @param self Stored continuation.
-     * @param value Discarded value.
+     * @param values Discarded successful payload, or none for successful void.
      * @return Next ReaderIO.
      */
-    constexpr auto operator()(this auto && self, [[maybe_unused]] auto && value)
+    constexpr auto operator()(this auto && self, [[maybe_unused]] auto &&... values)
     {
         return FW(self).next;
     }

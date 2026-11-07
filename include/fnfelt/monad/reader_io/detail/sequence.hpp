@@ -29,6 +29,7 @@
 #include <fnfelt/monad/reader_io/detail/bind.hpp>
 #include <fnfelt/monad/reader_io/detail/create.hpp>
 #include <fnfelt/monad/reader_io/fwd.hpp>
+#include <fnfelt/result.hpp>
 
 #include <fnfelt/macros_push.hpp>
 
@@ -154,7 +155,13 @@ struct SequenceReaderIOTraits : detail::CreateReaderIOTraits<name_cstr>
         {
             return "element ReaderIO must have the provided state type";
         }
-        if (is_void_type(detail::reader_io_value_meta(reader_meta)))
+        auto const value_meta = detail::reader_io_value_meta(reader_meta);
+        if (auto const reason = fnfelt::detail::ResultTypeInfo::from(value_meta).validate();
+            !reason.empty())
+        {
+            return reason;
+        }
+        if (is_void_type(value_meta))
         {
             return "element ReaderIO produces no value";
         }

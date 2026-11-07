@@ -33,6 +33,9 @@ namespace fnfelt::monad::reader_io
  * IO's value through the transformer. Values that are specialisations of `std::pair` or
  * `std::tuple` are spread into the transformer unless it accepts the value directly. Unlike
  * `and_then`, the transformer's result is not run as an IO.
+ * A Result source maps only its successful payload, with a nullary mapper for void, while errors
+ * and stops pass through. A mapper-returned Result is data inside an existing Result layer; a
+ * plain source instead adopts its first returned Result layer.
  *
  * The transformer must be a complete, non-reference, move constructible class or function pointer
  * type; the value-dependent transformer contract is delegated to the inner IO's transform
