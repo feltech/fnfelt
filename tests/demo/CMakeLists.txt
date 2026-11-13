@@ -32,3 +32,11 @@ fnfelt_target_linters(${PROJECT_NAME}.demo.tcp_echo)
 
 add_test(NAME ${PROJECT_NAME}.demo.tcp_echo COMMAND ${PROJECT_NAME}.demo.tcp_echo)
 set_tests_properties(${PROJECT_NAME}.demo.tcp_echo PROPERTIES TIMEOUT 15)
+
+add_executable(${PROJECT_NAME}.demo.main_thread_dispatch main_thread_dispatch.cpp)
+target_link_libraries(${PROJECT_NAME}.demo.main_thread_dispatch PRIVATE ${PROJECT_NAME}.lib)
+fnfelt_target_linters(${PROJECT_NAME}.demo.main_thread_dispatch)
+
+add_test(NAME ${PROJECT_NAME}.demo.main_thread_dispatch
+         COMMAND ${PROJECT_NAME}.demo.main_thread_dispatch)
+set_tests_properties(${PROJECT_NAME}.demo.main_thread_dispatch PROPERTIES TIMEOUT 15)
