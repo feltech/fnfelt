@@ -18,6 +18,8 @@
 
 #include <tuple>
 
+#include <libfork/core/scheduler.hpp>
+
 #include <fnfelt/monad/io/detail/fwd.hpp>
 #include <fnfelt/static_string.hpp>
 
@@ -76,6 +78,9 @@ struct CreateIOTraits;
 
 template <char const * name_cstr = detail::default_io_name>
 struct TapIOTraits;
+
+template <char const * name_cstr = detail::default_io_name>
+struct OnIOTraits;
 
 /**
  * Traits validating a value lifted by `io::just`.
@@ -186,6 +191,12 @@ template <class TTraits = detail::CreateIOTraits<>, class TAction>
 
 template <char const * name_cstr, class TAction>
 [[nodiscard]] constexpr auto create(TAction && action);
+
+template <class TTraits = detail::OnIOTraits<>, class TOriginal>
+[[nodiscard]] constexpr auto on(lf::worker_context * target_context, TOriginal && original);
+
+template <char const * name_cstr, class TOriginal>
+[[nodiscard]] constexpr auto on(lf::worker_context * target_context, TOriginal && original);
 
 // Forward declarations for the free and_then functions; defined and documented in and_then.hpp.
 // The IOs are taken by forwarding reference so rvalue chains move and lvalues are copied. Invalid

@@ -17,6 +17,7 @@
 #include <fnfelt/monad/io/fanout.hpp>           // IWYU pragma: export
 #include <fnfelt/monad/io/fwd.hpp>              // IWYU pragma: export
 #include <fnfelt/monad/io/just.hpp>             // IWYU pragma: export
+#include <fnfelt/monad/io/on.hpp>               // IWYU pragma: export
 #include <fnfelt/monad/io/or_else.hpp>          // IWYU pragma: export
 #include <fnfelt/monad/io/repeat_until.hpp>     // IWYU pragma: export
 #include <fnfelt/monad/io/select.hpp>           // IWYU pragma: export
